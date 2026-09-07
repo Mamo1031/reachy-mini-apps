@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+experiment/cache/
+experiment/logs/
+experiment/tools/voicevox/
+CLAUDE.md
+tasks/
+reference/
