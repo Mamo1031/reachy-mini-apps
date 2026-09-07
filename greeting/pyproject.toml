@@ -1,0 +1,9 @@
+[project]
+name = "greeting"
+version = "0.1.0"
+description = "Reachy Mini greeting app: 1=こんにちは / 2=さようなら をロボットのスピーカーで発話"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31"]
+
+[tool.uv]
+package = false
