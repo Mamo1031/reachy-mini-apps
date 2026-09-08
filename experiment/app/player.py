@@ -35,6 +35,8 @@ class TrajectoryPlayer:
         self.current: str | None = None
         self.last_sent: Pose = NEUTRAL
         self.tracking_paused = False
+        # 直近の再生の実測(設定画面の「動作の送信状況」と実機検証用)
+        self.stats: dict[str, float | int | str] = {"name": "", "frames": 0, "late": 0, "duration_s": 0.0, "hz": 0.0}
 
     # ------------------------------------------------------------ public
     def cancel(self, *, to_neutral: bool) -> None:
@@ -111,28 +113,35 @@ class TrajectoryPlayer:
         t3 = t2 + ramp_out
         t0 = time.monotonic()
         next_tick = t0
-        while True:
-            if self._cancel.is_set():
-                if self._cancel_to_neutral:
-                    await self._ramp(self.last_sent, NEUTRAL, ramp_out, period, head=head)
-                return
-            t = time.monotonic() - t0
-            if t < t1 and ramp_in > 0:
-                pose = lerp_pose(start, traj.first, t / t1)
-            elif t < t2:
-                pose = traj.pose_at(t - t1)
-            elif t < t3:
-                pose = lerp_pose(traj.last, NEUTRAL, (t - t2) / ramp_out)
-            else:
-                await self._send(NEUTRAL, head=head)
-                return
-            await self._send(pose, head=head)
-            next_tick += period
-            delay = next_tick - time.monotonic()
-            if delay > 0:
-                await asyncio.sleep(delay)
-            else:  # 遅れたら追いつく(次フレームは時刻基準で選ばれる)
-                next_tick = time.monotonic()
+        frames = late = 0
+        try:
+            while True:
+                if self._cancel.is_set():
+                    if self._cancel_to_neutral:
+                        await self._ramp(self.last_sent, NEUTRAL, ramp_out, period, head=head)
+                    return
+                t = time.monotonic() - t0
+                if t < t1 and ramp_in > 0:
+                    pose = lerp_pose(start, traj.first, t / t1)
+                elif t < t2:
+                    pose = traj.pose_at(t - t1)
+                elif t < t3:
+                    pose = lerp_pose(traj.last, NEUTRAL, (t - t2) / ramp_out)
+                else:
+                    await self._send(NEUTRAL, head=head)
+                    return
+                await self._send(pose, head=head)
+                frames += 1
+                next_tick += period
+                delay = next_tick - time.monotonic()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                else:  # 遅れたら追いつく(次フレームは時刻基準で選ばれる)
+                    late += 1
+                    next_tick = time.monotonic()
+        finally:
+            elapsed = time.monotonic() - t0
+            self.stats = {"name": traj.name, "frames": frames, "late": late, "duration_s": round(elapsed, 2), "hz": round(frames / elapsed, 1) if elapsed > 0 else 0.0}
 
     async def _ramp(self, a: Pose, b: Pose, duration: float, period: float, *, head: bool) -> None:
         t0 = time.monotonic()
