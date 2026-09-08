@@ -77,6 +77,7 @@ class Performer:
             "current": self.current,
             "tracking_enabled": self.settings_ref().motion.tracking_enabled,
             "server_time": time.time(),
+            "motion_stats": dict(self.player.stats),
         }
 
     def _publish(self) -> None:
