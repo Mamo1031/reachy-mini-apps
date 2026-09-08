@@ -158,7 +158,7 @@ async def preflight() -> None:
     if state.preflight["voicevox"]["status"] == "ok":
         step("synth", "running", "音声を準備中")
         try:
-            texts = state.performer.texts_for_prewarm(include_child=False)
+            texts = list(dict.fromkeys(state.performer.texts_for_prewarm(include_child=False)))  # 同じ文言は 1 件
             await state.audio.prewarm(texts, progress=lambda i, t, txt: step("synth", "running", f"音声を準備中 {i}/{t}: {txt[:18]}…", progress=[i, t]))
             step("synth", "ok", f"音声 {len(texts)} 件を準備済み")
             step("upload", "ok", f"音声 {len(state.audio.wanted)} 件をロボットへ転送済み")
@@ -328,6 +328,7 @@ def snapshot() -> dict[str, Any]:
         "phrases": state.phrases.model_dump(),
         "leaves": {k: v.model_dump() for k, v in state.phrases.leaves().items()},
         "gesture_names": state.gestures.names(),
+        "gesture_info": {name: (g.description or "") for name, g in state.gestures.root.items()},
         "recent_events": state.bus.recent[-50:],
     }
 
