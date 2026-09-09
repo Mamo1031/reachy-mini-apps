@@ -24,7 +24,7 @@ class FakeRobot:
         self.fail_present = False
         self.unreachable_after = None  # 呼び出し回数 N 以降は RobotUnreachable
 
-    async def present_pose(self):
+    async def present_pose(self, timeout=None):
         if self.fail_present:
             raise RobotUnreachable("x")
         return self.present
@@ -38,6 +38,10 @@ class FakeRobot:
         if self.latency:
             await asyncio.sleep(self.latency)
         self.targets.append((time.monotonic(), pose, head))
+
+    async def stream_target(self, pose, *, head=True, antennas=True):
+        await self.set_target(pose, head=head, antennas=antennas)
+        return "http"
 
     async def clear_moves(self):
         self.cleared += 1
@@ -70,10 +74,14 @@ def setup():
     return settings, robot, player
 
 
+async def restore_08(robot):
+    await robot.set_tracking(True, 0.8)
+
+
 async def test_play_ramps_in_streams_and_ramps_out_to_neutral(setup):
     settings, robot, player = setup
     t0 = time.monotonic()
-    await player.play(nod_traj(0.5), pause_tracking=True, tracking_weight=0.8)
+    await player.play(nod_traj(0.5), pause_tracking=True, restore_tracking=lambda: restore_08(robot))
     elapsed = time.monotonic() - t0
     assert 0.85 < elapsed < 1.4
     poses = [p for _, p, _ in robot.targets]
@@ -82,9 +90,10 @@ async def test_play_ramps_in_streams_and_ramps_out_to_neutral(setup):
     assert max(p.pitch for p in poses) == pytest.approx(0.3, abs=0.02)
     # 50 Hz で約 0.9 秒 → 40 フレーム以上
     assert len(poses) >= 40
-    # 追跡: weight 0 → 復元 0.8 の順
+    # 追跡: weight 0 → 復元コールバック(0.8)の順
     assert robot.tracking == [(True, 0.0), (True, 0.8)]
     assert not player.is_playing and player.tracking_paused is False
+    assert player.stats["frames"] >= 40 and player.stats["name"] == "nod"
 
 
 async def test_antenna_only_does_not_pause_tracking_or_send_head(setup):
@@ -107,7 +116,11 @@ async def test_late_frames_are_skipped_not_delayed(setup):
 
 async def test_cancel_to_neutral_ends_at_neutral_quickly(setup):
     _, robot, player = setup
-    task = asyncio.create_task(player.play(nod_traj(3.0), pause_tracking=True))
+
+    async def restore():
+        await robot.set_tracking(True, 1.0)
+
+    task = asyncio.create_task(player.play(nod_traj(3.0), pause_tracking=True, restore_tracking=restore))
     await asyncio.sleep(0.4)
     t0 = time.monotonic()
     player.cancel(to_neutral=True)
@@ -146,8 +159,28 @@ async def test_present_pose_failure_falls_back_to_last_sent(setup):
 async def test_unreachable_mid_gesture_restores_tracking_and_ends(setup):
     _, robot, player = setup
     robot.unreachable_after = 5
-    await player.play(nod_traj(1.0), pause_tracking=True)
+
+    async def restore():
+        await robot.set_tracking(True, 1.0)
+
+    await player.play(nod_traj(1.0), pause_tracking=True, restore_tracking=restore)
     assert not player.is_playing
+    assert robot.tracking[-1] == (True, 1.0)
+
+
+async def test_task_cancel_during_play_still_restores_tracking(setup):
+    """音声先行の待ちの後、再生途中で Task.cancel されても finally で追跡を戻す。"""
+    _, robot, player = setup
+
+    async def restore():
+        await robot.set_tracking(True, 1.0)
+
+    task = asyncio.create_task(player.play(nod_traj(3.0), pause_tracking=True, restore_tracking=restore))
+    await asyncio.sleep(0.3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not player.is_playing and player.tracking_paused is False
     assert robot.tracking[-1] == (True, 1.0)
 
 
