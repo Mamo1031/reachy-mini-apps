@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import time
 from pathlib import Path
 from typing import Literal, TypeVar
@@ -36,8 +38,8 @@ class Base(BaseModel):
 
 class RobotSettings(Base):
     base_url: str = "http://reachy-mini.local:8000"
-    connect_timeout_s: float = 1.0
-    read_timeout_s: float = 3.0
+    connect_timeout_s: float = Field(1.0, gt=0, le=10)
+    read_timeout_s: float = Field(3.0, gt=0, le=30)
 
 
 class NamesSettings(Base):
@@ -46,8 +48,8 @@ class NamesSettings(Base):
 
 
 class SessionSettings(Base):
-    main_minutes: float = 8.0
-    cue_interval_s: float = 30.0
+    main_minutes: float = Field(8.0, gt=0, le=120)
+    cue_interval_s: float = Field(30.0, gt=0, le=600)
 
 
 class Position(Base):
@@ -81,7 +83,7 @@ class DictEntry(Base):
 
 
 class TTSSettings(Base):
-    backend: str = "voicevox"
+    backend: Literal["voicevox"] = "voicevox"  # バックエンドを追加したらここに足す
     voice_id: str = "1"  # VOICEVOX: ずんだもん あまあま
     params: VoiceParams = Field(default_factory=VoiceParams)
     voicevox: VoicevoxSettings = Field(default_factory=VoicevoxSettings)
@@ -89,41 +91,41 @@ class TTSSettings(Base):
 
 
 class EnvelopeSettings(Base):
-    roll_deg: float = 30.0
-    pitch_deg: float = 25.0
-    yaw_deg: float = 45.0
-    xyz_mm: float = 30.0
-    antenna_deg: float = 170.0
+    roll_deg: float = Field(30.0, gt=0, le=60)
+    pitch_deg: float = Field(25.0, gt=0, le=60)
+    yaw_deg: float = Field(45.0, gt=0, le=90)
+    xyz_mm: float = Field(30.0, gt=0, le=60)
+    antenna_deg: float = Field(170.0, gt=0, le=180)
 
 
 class IdleSettings(Base):
     enabled: bool = True
-    interval_s: float = 10.0
-    jitter_s: float = 4.0
+    interval_s: float = Field(10.0, ge=2, le=120)
+    jitter_s: float = Field(4.0, ge=0, le=60)
     gesture_tracking_on: str = "antenna_twitch"
     gesture_tracking_off: str = "nod_small"
 
 
 class MotionSettings(Base):
     tracking_enabled: bool = True
-    tracking_weight: float = 1.0
+    tracking_weight: float = Field(1.0, ge=0, le=1)
     wobbling_enabled: bool = False
-    stream_hz: float = 50.0
-    ramp_in_s: float = 0.3
-    ramp_out_s: float = 0.4
-    audio_lead_ms: float = 150.0
+    stream_hz: float = Field(30.0, ge=10, le=60)  # 実機は 1 リクエスト約 30 ms(接続の再利用ができない)ため 30 Hz が実用上限
+    ramp_in_s: float = Field(0.3, ge=0, le=2)
+    ramp_out_s: float = Field(0.4, ge=0.05, le=2)
+    audio_lead_ms: float = Field(150.0, ge=0, le=2000)
     envelope: EnvelopeSettings = Field(default_factory=EnvelopeSettings)
     idle: IdleSettings = Field(default_factory=IdleSettings)
 
 
 class UISettings(Base):
-    debounce_ms: int = 500
+    debounce_ms: int = Field(500, ge=0, le=5000)
 
 
 def _default_positions() -> dict[str, Position]:
     return {
         "sample": Position(label="お手本", yaw_deg=-35.0, pitch_deg=10.0),
-        "photo": Position(label="写真カード", yaw_deg=-35.0, pitch_deg=10.0),
+        "photo": Position(label="写真カード", yaw_deg=35.0, pitch_deg=10.0),  # 仮: お手本の反対側。設定画面で実際の配置に合わせる
         "pieces": Position(label="ピース", yaw_deg=0.0, pitch_deg=18.0),
         "up": Position(label="上", yaw_deg=0.0, pitch_deg=-15.0),
     }
@@ -400,17 +402,52 @@ def load_or_create(path: Path, model: type[M], default: M) -> tuple[M, str | Non
 
 
 def save_atomic(path: Path, model: BaseModel) -> None:
+    """一時ファイルに書いて fsync → 置換。直前の内容は `<name>.bak` に 1 世代残す(誤保存の保険)。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(model.model_dump_json(indent=2), encoding="utf-8")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(model.model_dump_json(indent=2))
+        f.flush()
+        os.fsync(f.fileno())
+    if path.exists():
+        try:
+            shutil.copyfile(path, path.with_suffix(path.suffix + ".bak"))
+        except OSError:
+            pass
     os.replace(tmp, path)
 
 
-class SafeDict(dict):
-    def __missing__(self, key: str) -> str:
-        return "{" + key + "}"
+_PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 
 
 def expand(text: str, **values: str) -> str:
-    """プレースホルダ {robot} {child} {experimenter} を展開する。未知のキーはそのまま残す。"""
-    return text.format_map(SafeDict(**values))
+    """プレースホルダ {robot} {child} {experimenter} を展開する。
+
+    未知のキーはそのまま残し、波括弧が崩れていても例外にしない(str.format と違い、台本に
+    '{' が 1 つ紛れ込んでも再生が止まらない)。
+    """
+    return _PLACEHOLDER_RE.sub(lambda m: values.get(m.group(1), m.group(0)), text)
+
+
+def validate_phrases(ph: Phrases, gesture_names: set[str]) -> list[str]:
+    """台本の不備を列挙する(保存前に呼ぶ)。空なら OK。"""
+    errors: list[str] = []
+    ids: list[str] = []
+    for step in ph.intro:
+        ids.extend(p.id for p in step.leaves())
+    for cat in ("empathy", "logical", "backchannel"):
+        ids.extend(p.id for p in getattr(ph, cat))
+    if not ids:
+        errors.append("台本が空です")
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    if dup:
+        errors.append("ID が重複しています: " + ", ".join(dup))
+    for k, v in ph.leaves().items():
+        if not v.text.strip():
+            errors.append(f"{k}: 本文が空です")
+        if v.gesture not in gesture_names:
+            errors.append(f"{k}: ジェスチャー '{v.gesture}' がありません")
+    for order in ("robot_first", "experimenter_first"):
+        if not ph.intro_sequence(order):
+            errors.append(f"順序条件 {order} のイントロがありません")
+    return errors
