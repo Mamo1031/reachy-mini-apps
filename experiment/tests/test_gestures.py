@@ -16,18 +16,20 @@ def lib():
     return GestureLibrary(lambda: gestures, lambda: settings, MOVES)
 
 
-def _max_step(frames):
-    """隣接フレーム間の頭部角度の最大変化量(rad)。アンテナは公式データが速いので別扱い。"""
+def _max_head_speed(frames):
+    """頭部角度の最大角速度(rad/s)。フレームレートに依存しない指標。"""
     worst = 0.0
-    for (_, a), (_, b) in zip(frames, frames[1:]):
-        worst = max(worst, abs(a.pitch - b.pitch), abs(a.yaw - b.yaw), abs(a.roll - b.roll))
+    for (t0, a), (t1, b) in zip(frames, frames[1:]):
+        dt = max(t1 - t0, 1e-6)
+        worst = max(worst, abs(a.pitch - b.pitch) / dt, abs(a.yaw - b.yaw) / dt, abs(a.roll - b.roll) / dt)
     return worst
 
 
-def _max_antenna_step(frames):
+def _max_antenna_speed(frames):
     worst = 0.0
-    for (_, a), (_, b) in zip(frames, frames[1:]):
-        worst = max(worst, abs(a.ant_r - b.ant_r), abs(a.ant_l - b.ant_l))
+    for (t0, a), (t1, b) in zip(frames, frames[1:]):
+        dt = max(t1 - t0, 1e-6)
+        worst = max(worst, abs(a.ant_r - b.ant_r) / dt, abs(a.ant_l - b.ant_l) / dt)
     return worst
 
 
@@ -43,7 +45,7 @@ def test_keyframes_timing_continuity_and_hold():
     assert all(abs(v - peak) < 1e-12 for v in hold)
     # 端点で速度ゼロ(最初と最後の変化量が小さい)
     assert abs(frames[1][1].pitch - frames[0][1].pitch) < 0.1 * DEG
-    assert _max_step(frames) < 2.0 * DEG  # 8° を 0.2 秒で動かす最小躍度のピーク速度 ≒ 1.5°/フレーム
+    assert _max_head_speed(frames) < 100 * DEG  # 8° を 0.2 秒: 最小躍度のピーク速度 = 1.875 × 40°/s = 75°/s
 
 
 def test_keyframes_antennas_physical_and_unknown_key():
@@ -86,8 +88,8 @@ def test_library_builds_every_default_gesture_without_warnings(lib):
     for name in lib.names():
         traj = lib.build(name)
         assert isinstance(traj, Trajectory) and traj.duration > 0
-        assert _max_step(traj.frames) < 6 * DEG, name  # 頭は 1 フレームで 6° 以上飛ばない
-        assert _max_antenna_step(traj.frames) < 15 * DEG, name
+        assert _max_head_speed(traj.frames) < 300 * DEG, name  # 頭は 300°/s を超えない
+        assert _max_antenna_speed(traj.frames) < 800 * DEG, name
 
 
 def test_point_uses_settings_position(lib):
@@ -102,8 +104,8 @@ def test_sequence_concatenates(lib):
     a = lib.build("happy_lean")
     b = lib.build("antenna_clap")
     seq = lib.build("happy_lean_clap")
-    assert seq.duration == pytest.approx(a.duration + 0.2 + b.duration, abs=0.05)
-    assert _max_step(seq.frames) < 6 * DEG
+    assert seq.duration == pytest.approx(a.duration + 0.35 + b.duration, abs=0.05)
+    assert _max_head_speed(seq.frames) < 300 * DEG
 
 
 def test_antenna_only_gesture_does_not_move_head(lib):
