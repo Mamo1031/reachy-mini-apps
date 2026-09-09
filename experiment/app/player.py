@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Callable
+from typing import Awaitable, Callable
 
 from .config import Settings
 from .events import EventBus
@@ -35,8 +35,9 @@ class TrajectoryPlayer:
         self.current: str | None = None
         self.last_sent: Pose = NEUTRAL
         self.tracking_paused = False
+        self.transport = "http"  # 直近のフレーム送信経路(ws / http)
         # 直近の再生の実測(設定画面の「動作の送信状況」と実機検証用)
-        self.stats: dict[str, float | int | str] = {"name": "", "frames": 0, "late": 0, "duration_s": 0.0, "hz": 0.0}
+        self.stats: dict[str, float | int | str] = {"name": "", "frames": 0, "late": 0, "duration_s": 0.0, "hz": 0.0, "transport": ""}
 
     # ------------------------------------------------------------ public
     def cancel(self, *, to_neutral: bool) -> None:
@@ -53,53 +54,89 @@ class TrajectoryPlayer:
             await asyncio.sleep(0.01)
         return not self.is_playing
 
-    async def play(self, traj: Trajectory, *, pause_tracking: bool, tracking_weight: float = 1.0) -> None:
-        """軌道を再生する。同時に 1 本だけ(ロックで直列化)。"""
+    async def go_neutral(self, duration: float | None = None) -> None:
+        """最後に送った姿勢からニュートラルへ短いランプで戻す(強制キャンセル後の後始末)。"""
+        m = self.settings_ref().motion
+        dur = duration if duration is not None else max(0.05, m.ramp_out_s)
+        period = 1.0 / max(10.0, float(m.stream_hz))
+        async with self._lock:
+            self._abort = False
+            self.is_playing = True
+            try:
+                await self._ramp(self.last_sent, NEUTRAL, dur, period, head=True)
+            except RobotError as e:
+                log.warning("go_neutral failed: %s", e)
+            finally:
+                self.is_playing = False
+
+    async def play(
+        self,
+        traj: Trajectory,
+        *,
+        pause_tracking: bool,
+        restore_tracking: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        """軌道を再生する。同時に 1 本だけ(ロックで直列化)。
+
+        pause_tracking: 頭を動かす軌道の間、顔追跡を weight 0 にする。
+        restore_tracking: 終了時に呼ぶコールバック(Performer.apply_tracking)。「開始時の重み」ではなく
+            「終了時点で望ましい状態」を適用するため、再生中に追跡 OFF や一時停止に変わっても正しく戻る。
+        """
         async with self._lock:
             self._cancel.clear()
             self._cancel_to_neutral = False
             self._abort = False
             self.is_playing = True
             self.current = traj.name
-            paused = False
             try:
                 start = await self._present_pose()
                 # 現在姿勢をまず送っておく(追跡を止めた瞬間にスナップしないため)。アンテナだけの軌道なら頭は送らない
-                await self._send(start, head=traj.moves_head)
+                await self._send(start, head=traj.moves_head, first=True)
                 if pause_tracking and traj.moves_head:
+                    self.tracking_paused = True  # 送信前に立てる: 途中でキャンセルされても finally で必ず戻す
                     await self.robot.set_tracking(True, 0.0)
-                    paused = True
-                    self.tracking_paused = True
                 await self._stream(start, traj)
             except RobotError as e:
                 log.warning("gesture aborted: %s", e)
                 self.bus.toast("error", f"動作を中断しました: {e}")
             finally:
-                if paused:
-                    self.tracking_paused = False
-                    try:
-                        await self.robot.set_tracking(True, tracking_weight)
-                    except RobotError as e:
-                        log.warning("tracking restore failed: %s", e)
                 self.is_playing = False
                 self.current = None
+                if self.tracking_paused:
+                    self.tracking_paused = False
+                    if restore_tracking is not None:
+                        try:
+                            await asyncio.shield(restore_tracking())
+                        except RobotError as e:
+                            log.warning("tracking restore failed: %s", e)
+                            self.bus.toast("warn", f"顔追跡の復元に失敗しました(接続回復後に再適用します): {e}")
+                        except Exception as e:  # 復元コールバック内の想定外
+                            log.exception("restore_tracking failed")
+                            self.bus.toast("warn", f"顔追跡の復元でエラー: {e}")
 
     # ------------------------------------------------------------ internals
     async def _present_pose(self) -> Pose:
         try:
-            return await self.robot.present_pose()
+            return await self.robot.present_pose(timeout=0.5)  # 音声はもう鳴っているので待たない
         except RobotError as e:
             log.warning("present_pose failed, using last sent: %s", e)
             return self.last_sent
 
-    async def _send(self, pose: Pose, *, head: bool) -> None:
-        try:
-            await self.robot.set_target(pose, head=head)
-        except RobotBusy:
-            # 実行中のムーブ(起動時の goto 等)が残っていると無視されるので止めて 1 回だけ再送
-            n = await self.robot.clear_moves()
-            log.info("cleared %d running move(s) before streaming", n)
-            await self.robot.set_target(pose, head=head)
+    async def _send(self, pose: Pose, *, head: bool, first: bool = False) -> None:
+        """フレームを送る。最初の 1 フレームは HTTP で送り、ムーブ実行中(無視)を検出する。
+
+        以降は WebSocket(応答待ちなし)で流す。WebSocket が使えないときは HTTP に落ちる。
+        """
+        if first:
+            try:
+                await self.robot.set_target(pose, head=head)
+            except RobotBusy:
+                # 実行中のムーブ(起動時の goto 等)が残っていると無視されるので止めて 1 回だけ再送
+                n = await self.robot.clear_moves()
+                log.info("cleared %d running move(s) before streaming", n)
+                await self.robot.set_target(pose, head=head)
+        else:
+            self.transport = await self.robot.stream_target(pose, head=head)
         self.last_sent = pose if head else self.last_sent.with_(ant_r=pose.ant_r, ant_l=pose.ant_l)
 
     async def _stream(self, start: Pose, traj: Trajectory) -> None:
@@ -141,7 +178,7 @@ class TrajectoryPlayer:
                     next_tick = time.monotonic()
         finally:
             elapsed = time.monotonic() - t0
-            self.stats = {"name": traj.name, "frames": frames, "late": late, "duration_s": round(elapsed, 2), "hz": round(frames / elapsed, 1) if elapsed > 0 else 0.0}
+            self.stats = {"name": traj.name, "frames": frames, "late": late, "duration_s": round(elapsed, 2), "hz": round(frames / elapsed, 1) if elapsed > 0 else 0.0, "transport": self.transport}
 
     async def _ramp(self, a: Pose, b: Pose, duration: float, period: float, *, head: bool) -> None:
         t0 = time.monotonic()
