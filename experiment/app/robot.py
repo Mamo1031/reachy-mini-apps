@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
 import socket
 import time
@@ -16,7 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from .pose import Pose, antennas_payload, head_payload
+from .pose import Pose, antennas_payload, head_payload, pose_to_matrix_flat
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +76,87 @@ class DaemonStatus:
         )
 
 
+class TargetStream:
+    """デーモンの WebSocket(/ws/sdk)へ `set_full_target` を送りっぱなしにする経路。
+
+    HTTP は 1 フレームごとに新しい TCP 接続(往復 2 回)が要り、Wi-Fi の揺らぎで 30〜150 ms かかる。
+    WebSocket なら応答を待たずに送れるので、送信レートが往復遅延に縛られない。
+    接続が切れたら次のフレームで張り直し、張れなければ呼び出し側が HTTP に落とす。
+    """
+
+    def __init__(self, robot: "RobotClient") -> None:
+        self.robot = robot
+        self._ws: Any = None
+        self._drain_task: asyncio.Task | None = None
+        self._failed_at = 0.0
+        self.sent = 0
+
+    def _url(self) -> str:
+        base = self.robot.resolved_url
+        scheme = "wss" if base.startswith("https") else "ws"
+        return scheme + base.split("://", 1)[1].join(["://", "/ws/sdk"])
+
+    async def _connect(self) -> bool:
+        if self._ws is not None:
+            return True
+        if time.monotonic() - self._failed_at < 2.0:  # 失敗直後は連続で試さない
+            return False
+        try:
+            import websockets
+
+            self._ws = await asyncio.wait_for(websockets.connect(self._url(), open_timeout=1.0, ping_interval=None, max_queue=4), timeout=1.5)
+        except Exception as e:  # 接続不可はフォールバックで吸収
+            log.info("ws stream unavailable (%s); using HTTP", type(e).__name__)
+            self._failed_at = time.monotonic()
+            self._ws = None
+            return False
+        self._drain_task = asyncio.create_task(self._drain(), name="ws-target-drain")
+        log.info("ws target stream connected: %s", self._url())
+        return True
+
+    async def _drain(self) -> None:
+        """デーモンが流してくる状態通知を読み捨てる(読まないと送信バッファが詰まる)。"""
+        ws = self._ws
+        try:
+            async for _ in ws:
+                pass
+        except Exception:
+            pass
+        finally:
+            if self._ws is ws:
+                self._ws = None
+
+    async def send(self, pose: Pose, *, head: bool, antennas: bool) -> bool:
+        if not await self._connect():
+            return False
+        msg = {
+            "type": "set_full_target",
+            "head": pose_to_matrix_flat(pose) if head else None,
+            "antennas": antennas_payload(pose) if antennas else None,
+            "body_yaw": None,
+        }
+        try:
+            await asyncio.wait_for(self._ws.send(json.dumps(msg)), timeout=0.5)
+        except Exception as e:
+            log.warning("ws send failed (%s); reconnecting next frame", type(e).__name__)
+            await self.close()
+            self._failed_at = 0.0  # すぐ張り直してよい
+            return False
+        self.sent += 1
+        return True
+
+    async def close(self) -> None:
+        ws, self._ws = self._ws, None
+        if self._drain_task is not None:
+            self._drain_task.cancel()
+            self._drain_task = None
+        if ws is not None:
+            try:
+                await asyncio.wait_for(ws.close(), timeout=1.0)
+            except Exception:
+                pass
+
+
 class RobotClient:
     def __init__(
         self,
@@ -89,6 +171,7 @@ class RobotClient:
         self._transport = transport
         self._client: httpx.AsyncClient | None = None
         self._resolved_url: str | None = None
+        self._stream: TargetStream | None = None
         self._base_url = base_url.rstrip("/")
 
     # ------------------------------------------------------------ lifecycle
@@ -138,6 +221,8 @@ class RobotClient:
     async def _drop_client(self) -> None:
         """接続失敗時: 次回は名前解決からやり直す(再起動で IP が変わった場合に備える)。"""
         old, self._client, self._resolved_url = self._client, None, None
+        if self._stream is not None:
+            await self._stream.close()
         if old is not None:
             await old.aclose()
 
@@ -196,8 +281,8 @@ class RobotClient:
     async def disable_motors(self) -> None:
         await self._post("/api/motors/set_mode/disabled", "モーター無効化")
 
-    async def present_pose(self) -> Pose:
-        d = await self._get("/api/state/full", "現在姿勢取得")
+    async def present_pose(self, timeout: float | None = None) -> Pose:
+        d = await self._get("/api/state/full", "現在姿勢取得", timeout=timeout)
         hp = d.get("head_pose")
         ant = d.get("antennas_position")
         if not isinstance(hp, dict) or not ant or len(ant) < 2:
@@ -266,6 +351,24 @@ class RobotClient:
         if isinstance(d, dict) and d.get("status") == "ignored":
             raise RobotBusy("ムーブ実行中のため目標を送れませんでした")
 
+    async def stream_target(self, pose: Pose, *, head: bool = True, antennas: bool = True) -> str:
+        """軌道のフレーム送信用。WebSocket(応答待ちなし)を優先し、使えなければ HTTP set_target に落とす。
+
+        戻り値: 使った経路 "ws" / "http"。WebSocket は応答が無いので「ムーブ実行中で無視された」ことは
+        分からない — ストリーミング開始前に HTTP の set_target で確認しておくこと。
+        """
+        if self._transport is None:  # テスト用の ASGI トランスポートでは WebSocket は使えない
+            stream = self._stream or TargetStream(self)
+            self._stream = stream
+            if await stream.send(pose, head=head, antennas=antennas):
+                return "ws"
+        await self.set_target(pose, head=head, antennas=antennas)
+        return "http"
+
+    async def close_stream(self) -> None:
+        if self._stream is not None:
+            await self._stream.close()
+
     # ------------------------------------------------------------ tracking / wobbling
     async def set_tracking(self, enabled: bool, weight: float = 1.0) -> None:
         if enabled:
@@ -278,9 +381,16 @@ class RobotClient:
 
     # ------------------------------------------------------------ audio
     async def list_sounds(self) -> set[str]:
+        """ロボット上の音声ファイル名(basename)。実機は {"files": [...]} だが、キー名に依存しない。"""
         d = await self._get("/api/media/sounds", "音声一覧取得")
-        files = d.get("files", []) if isinstance(d, dict) else []
-        return {f.rsplit("/", 1)[-1] for f in files}
+        names: set[str] = set()
+        if isinstance(d, dict):
+            for v in d.values():
+                if isinstance(v, list):
+                    names.update(str(f).rsplit("/", 1)[-1] for f in v)
+        elif isinstance(d, list):
+            names.update(str(f).rsplit("/", 1)[-1] for f in d)
+        return names
 
     async def upload_sound(self, name: str, wav: bytes) -> None:
         await self._post("/api/media/sounds/upload", f"音声アップロード({name})", files={"file": (name, wav, "audio/wav")}, timeout=20.0)
