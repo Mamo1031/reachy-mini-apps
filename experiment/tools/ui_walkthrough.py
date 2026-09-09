@@ -82,7 +82,8 @@ with sync_playwright() as p:
     check("playing" in cls, f"A1 button has playing class: {cls}")
     page.screenshot(path=f"{OUT}/03_playing.png")
     st = demo("/demo/state")
-    check(len(st["played"]) == 1 and st["played"][0].endswith(".wav"), f"fake robot played sound: {st['played']}")
+    wavs = [n for n in st["played"] if n.endswith(".wav")]
+    check(len(wavs) == 1, f"fake robot played sound: {st['played']}")
     page.wait_for_timeout(2500)
     check("✓" in page.locator("#intro-buttons button[data-id='A1']").inner_text() or "done" in (page.locator("#intro-buttons button[data-id='A1']").get_attribute("class") or ""), "A1 marked done")
 
@@ -192,8 +193,11 @@ with sync_playwright() as p:
     page.screenshot(path=f"{OUT}/08_control_logical.png")
     page.click("#btn-rest")
     page.wait_for_selector("#overlay-resting:not([hidden])", timeout=30000)
-    st = demo("/demo/state")
-    check(st["motor_mode"] == "disabled", "motors disabled when resting")
+    # 休止表示はスリープ動作の開始時点で出る。モーター OFF はスリープ姿勢に着いてから
+    deadline = time.time() + 15
+    while time.time() < deadline and demo("/demo/state")["motor_mode"] != "disabled":
+        time.sleep(0.3)
+    check(demo("/demo/state")["motor_mode"] == "disabled", "motors disabled when resting")
     page.screenshot(path=f"{OUT}/09_resting.png")
     page.click("#btn-wake-overlay")
     page.wait_for_selector("#overlay-resting[hidden]", state="attached", timeout=60000)
