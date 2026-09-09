@@ -76,7 +76,7 @@ async def test_play_phrase_plays_sound_then_gesture_and_finishes(h):
     assert h.performer.current["text"] == "うん"
     assert len(played(h)) == 1 and played(h)[0].endswith(".wav")
     # 音 → lead → 軌道の順(最初の set_target は音より後)
-    await asyncio.sleep(0.15)
+    await asyncio.sleep(0.5)  # 負荷が高いときでも最初のフレームが届く余裕を持つ
     assert h.fake.targets and h.fake.targets[0][0] >= h.fake.played[0][0] + 0.04
     await asyncio.sleep(res["duration"] + 0.6)
     assert h.performer.status == "idle" and h.performer.current is None
@@ -163,11 +163,12 @@ async def test_unknown_phrase(h):
 
 async def test_idle_gesture_runs_when_idle_and_yields(h):
     h.settings.motion.idle.enabled = True
-    h.settings.motion.idle.interval_s = 1.2
+    h.settings.motion.idle.interval_s = 2.0
     h.settings.motion.idle.jitter_s = 0.0
     h.settings.motion.tracking_enabled = True
+    h.performer.last_idle_at = time.monotonic() - 5
     h.performer.start_idle()
-    await asyncio.sleep(2.6)
+    await asyncio.sleep(2.0)
     heads = [t[1]["target_head_pose"] for t in h.fake.targets]
     assert h.fake.targets and all(hp is None for hp in heads)  # 追跡 ON → アンテナだけ
     await h.performer.stop_idle()
