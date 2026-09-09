@@ -185,7 +185,13 @@ class GestureLibrary:
             p = self.moves_dir / f"{file}.json"
             if not p.exists():
                 raise GestureError(f"モーションファイルがありません: {p.name}")
-            self._docs[file] = json.loads(p.read_text(encoding="utf-8"))
+            try:
+                doc = json.loads(p.read_text(encoding="utf-8"))
+            except (ValueError, OSError) as e:
+                raise GestureError(f"モーションファイルを読めません: {p.name}: {e}") from e
+            if not isinstance(doc, dict) or "time" not in doc or "set_target_data" not in doc:
+                raise GestureError(f"モーションファイルの形式が不正です: {p.name}")
+            self._docs[file] = doc
         return self._docs[file]
 
     def names(self) -> list[str]:
@@ -204,7 +210,10 @@ class GestureLibrary:
         elif g.kind == "recorded":
             if not g.file:
                 raise GestureError(f"{name}: file が未指定です")
-            frames = from_recorded(self.load_doc(g.file), env, start=g.start, end=g.end, speed=g.speed, normalize_xyz=g.normalize_xyz)
+            try:
+                frames = from_recorded(self.load_doc(g.file), env, start=g.start, end=g.end, speed=g.speed, normalize_xyz=g.normalize_xyz)
+            except (KeyError, IndexError, TypeError, ValueError) as e:  # データ欠損・型違い
+                raise GestureError(f"{name}: モーション {g.file} のデータが不正です({type(e).__name__}: {e})") from e
         elif g.kind == "point":
             positions = self.settings_ref().positions
             if not g.target or g.target not in positions:
@@ -216,9 +225,9 @@ class GestureLibrary:
             for step in g.steps:
                 sub = self.build(step, _depth + 1)
                 if frames:
-                    # 前のジェスチャーの終端から次の始端へ 0.2 秒でつなぐ
+                    # 前のジェスチャーの終端から次の始端へ 0.35 秒(最小躍度)でつなぐ
                     prev = frames[-1][1]
-                    n = max(1, int(round(0.2 * hz)))
+                    n = max(1, int(round(0.35 * hz)))
                     for i in range(1, n + 1):
                         t_off += 1.0 / hz
                         frames.append((t_off, lerp_pose(prev, sub.first, i / n)))
