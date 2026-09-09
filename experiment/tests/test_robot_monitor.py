@@ -13,7 +13,9 @@ from tests.fake_daemon import FakeDaemon, make_app
 
 @pytest.fixture
 def fake():
-    return FakeDaemon()
+    fd = FakeDaemon()
+    fd.motor_mode = "enabled"  # 復旧手順(偽)はモーターを入れないので、最初から有効にしておく
+    return fd
 
 
 @pytest.fixture
@@ -25,7 +27,7 @@ async def robot(fake):
 
 async def test_status_and_present_pose(robot, fake):
     st = await robot.daemon_status()
-    assert st.state == "running" and st.ready and st.motor_mode == "disabled"
+    assert st.state == "running" and st.ready and st.motor_mode == "enabled"
     p = await robot.present_pose()
     assert p.pitch == 0.5 and p.ant_r == -3.05 and p.ant_l == 3.05
 
