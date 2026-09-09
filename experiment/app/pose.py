@@ -135,6 +135,17 @@ def rpy_to_mat(roll: float, pitch: float, yaw: float) -> list[list[float]]:
     ]
 
 
+def pose_to_matrix_flat(p: Pose) -> list[float]:
+    """頭部姿勢 → 4x4 同次変換行列(行優先で平坦化した 16 要素。デーモンの WebSocket コマンド用)。"""
+    r = rpy_to_mat(p.roll, p.pitch, p.yaw)
+    return [
+        r[0][0], r[0][1], r[0][2], p.x,
+        r[1][0], r[1][1], r[1][2], p.y,
+        r[2][0], r[2][1], r[2][2], p.z,
+        0.0, 0.0, 0.0, 1.0,
+    ]
+
+
 def pose_from_matrix(m: Sequence[Sequence[float]], ant_r: float, ant_l: float) -> Pose:
     roll, pitch, yaw = mat_to_rpy(m)
     return Pose(roll=roll, pitch=pitch, yaw=yaw, x=m[0][3], y=m[1][3], z=m[2][3], ant_r=ant_r, ant_l=ant_l)
