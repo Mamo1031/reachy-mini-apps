@@ -18,6 +18,7 @@ from app.pose import (
     mat_to_rpy,
     minjerk,
     pose_from_matrix,
+    pose_to_matrix_flat,
     rpy_to_mat,
 )
 
@@ -97,3 +98,13 @@ def test_head_moves():
     assert head_moves([NEUTRAL, NEUTRAL.with_(pitch=5 * DEG)])
     assert head_moves([NEUTRAL, NEUTRAL.with_(z=0.01)])
     assert not head_moves([])
+
+
+def test_pose_to_matrix_flat_roundtrip():
+    p = Pose(roll=0.2, pitch=-0.1, yaw=0.3, x=0.01, y=-0.02, z=0.005, ant_r=-0.3, ant_l=0.4)
+    flat = pose_to_matrix_flat(p)
+    assert len(flat) == 16 and flat[12:] == [0.0, 0.0, 0.0, 1.0]
+    m = [flat[0:4], flat[4:8], flat[8:12], flat[12:16]]
+    q = pose_from_matrix(m, p.ant_r, p.ant_l)
+    for a in ("roll", "pitch", "yaw", "x", "y", "z"):
+        assert abs(getattr(q, a) - getattr(p, a)) < 1e-9, a
