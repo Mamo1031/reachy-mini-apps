@@ -34,7 +34,6 @@ MOVES = [
     ("emotions", "understanding2"),
     ("emotions", "amazed1"),
     ("emotions", "come1"),
-    ("emotions", "no_excited1"),
     ("emotions", "inquiring2"),
     ("emotions", "inquiring3"),
     ("emotions", "thoughtful1"),
