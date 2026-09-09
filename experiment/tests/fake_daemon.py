@@ -9,12 +9,13 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid as uuidlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 
@@ -207,6 +208,35 @@ def make_app(fd: FakeDaemon) -> FastAPI:
     def stop_sound():
         fd.played.append((time.monotonic(), "<stop>"))
         return {"status": "ok"}
+
+    @app.websocket("/ws/sdk")
+    async def ws_sdk(ws: WebSocket):
+        """SDK 用 WebSocket: set_full_target を受け取って記録する(応答なし)。"""
+        await ws.accept()
+        fd.calls.append("WS /ws/sdk")
+        try:
+            while True:
+                raw = await ws.receive_text()
+                try:
+                    msg = json.loads(raw)
+                except ValueError:
+                    continue
+                if msg.get("type") == "set_full_target":
+                    if fd.running():
+                        continue  # ムーブ実行中は無視(実機と同じ)
+                    body = {"target_head_pose": None, "target_antennas": msg.get("antennas"), "target_body_yaw": msg.get("body_yaw")}
+                    if msg.get("head"):
+                        m = msg["head"]
+                        import math
+
+                        pitch = math.atan2(-m[8], math.hypot(m[0], m[4]))
+                        body["target_head_pose"] = {"x": m[3], "y": m[7], "z": m[11], "roll": math.atan2(m[9], m[10]), "pitch": pitch, "yaw": math.atan2(m[4], m[0])}
+                        fd.head = dict(body["target_head_pose"])
+                    if msg.get("antennas"):
+                        fd.antennas = list(msg["antennas"])
+                    fd.targets.append((time.monotonic(), body))
+        except WebSocketDisconnect:
+            pass
 
     @app.get("/api/volume/current")
     def vol():
