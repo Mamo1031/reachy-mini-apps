@@ -143,6 +143,9 @@ class SessionManager:
         if phase == "main" and s.main_started_mono is None:
             s.main_started_mono = time.monotonic()
             s.main_started_at = dt.datetime.now().isoformat(timespec="seconds")
+            # 本番開始から最初の声かけまでも「30 秒の目安」を出す
+            if s.last_utterance_mono is None:
+                s.last_utterance_mono = s.main_started_mono
         self.row("phase", detail=phase)
         self.bus.publish("session", **self.snapshot())
 
