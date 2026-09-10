@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.27",
     "pydantic>=2.7",
     "python-multipart>=0.0.9",
+    "websockets>=12",
 ]
 
 [dependency-groups]
