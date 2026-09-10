@@ -1,0 +1,88 @@
+{
+  "robot": {
+    "base_url": "http://reachy-mini.local:8000",
+    "connect_timeout_s": 1.0,
+    "read_timeout_s": 3.0
+  },
+  "names": {
+    "robot": "ドラちゃん",
+    "experimenter": "はるかお姉さん"
+  },
+  "session": {
+    "main_minutes": 8.0,
+    "cue_interval_s": 30.0
+  },
+  "positions": {
+    "sample": {
+      "label": "お手本",
+      "yaw_deg": -35.0,
+      "pitch_deg": 10.0
+    },
+    "photo": {
+      "label": "写真カード",
+      "yaw_deg": 35.0,
+      "pitch_deg": 10.0
+    },
+    "pieces": {
+      "label": "ピース",
+      "yaw_deg": 0.0,
+      "pitch_deg": 18.0
+    },
+    "up": {
+      "label": "上",
+      "yaw_deg": 0.0,
+      "pitch_deg": -15.0
+    }
+  },
+  "tts": {
+    "backend": "voicevox",
+    "voice_id": "1",
+    "params": {
+      "speed": 0.9,
+      "pitch": 0.03,
+      "intonation": 1.15,
+      "volume": 1.0,
+      "post_phoneme": 0.3,
+      "pause_scale": 1.2
+    },
+    "voicevox": {
+      "engine_dir": "tools/voicevox/macos-arm64",
+      "host": "127.0.0.1",
+      "port": 50021,
+      "autostart": true
+    },
+    "user_dict": [
+      {
+        "surface": "はるか",
+        "pronunciation": "ハルカ",
+        "accent_type": 0
+      }
+    ]
+  },
+  "motion": {
+    "tracking_enabled": true,
+    "tracking_weight": 1.0,
+    "wobbling_enabled": false,
+    "stream_hz": 30.0,
+    "ramp_in_s": 0.3,
+    "ramp_out_s": 0.4,
+    "audio_lead_ms": 150.0,
+    "envelope": {
+      "roll_deg": 30.0,
+      "pitch_deg": 25.0,
+      "yaw_deg": 45.0,
+      "xyz_mm": 30.0,
+      "antenna_deg": 170.0
+    },
+    "idle": {
+      "enabled": true,
+      "interval_s": 10.0,
+      "jitter_s": 4.0,
+      "gesture_tracking_on": "antenna_twitch",
+      "gesture_tracking_off": "nod_small"
+    }
+  },
+  "ui": {
+    "debounce_ms": 500
+  }
+}
