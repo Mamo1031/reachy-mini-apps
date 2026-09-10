@@ -1,0 +1,746 @@
+{
+  "nod_small": {
+    "kind": "keyframes",
+    "description": "小さく頷く",
+    "frames": [
+      {
+        "head": {
+          "pitch": 8.0
+        },
+        "antennas": null,
+        "d": 0.25,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": 0.0
+        },
+        "antennas": null,
+        "d": 0.3,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "nod_gentle": {
+    "kind": "keyframes",
+    "description": "やさしく頷く",
+    "frames": [
+      {
+        "head": {
+          "pitch": 10.0
+        },
+        "antennas": null,
+        "d": 0.4,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": 0.0
+        },
+        "antennas": null,
+        "d": 0.5,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "shake_small": {
+    "kind": "keyframes",
+    "description": "小さく首を横に振る",
+    "frames": [
+      {
+        "head": {
+          "yaw": -12.0
+        },
+        "antennas": null,
+        "d": 0.25,
+        "hold": null
+      },
+      {
+        "head": {
+          "yaw": 12.0
+        },
+        "antennas": null,
+        "d": 0.35,
+        "hold": null
+      },
+      {
+        "head": {
+          "yaw": 0.0
+        },
+        "antennas": null,
+        "d": 0.25,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "shake_gentle_antenna_up": {
+    "kind": "keyframes",
+    "description": "やさしく首を横に振ったあとアンテナを上げる",
+    "frames": [
+      {
+        "head": {
+          "yaw": -10.0
+        },
+        "antennas": null,
+        "d": 0.4,
+        "hold": null
+      },
+      {
+        "head": {
+          "yaw": 10.0
+        },
+        "antennas": null,
+        "d": 0.6,
+        "hold": null
+      },
+      {
+        "head": {
+          "yaw": 0.0
+        },
+        "antennas": null,
+        "d": 0.4,
+        "hold": null
+      },
+      {
+        "head": null,
+        "antennas": [
+          -25.0,
+          -25.0
+        ],
+        "d": 0.4,
+        "hold": null
+      },
+      {
+        "head": null,
+        "antennas": null,
+        "d": 0.3,
+        "hold": 0.5
+      },
+      {
+        "head": null,
+        "antennas": [
+          10.0,
+          10.0
+        ],
+        "d": 0.4,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "tilt_sympathy": {
+    "kind": "keyframes",
+    "description": "首を傾げて共感",
+    "frames": [
+      {
+        "head": {
+          "roll": 14.0,
+          "pitch": 6.0
+        },
+        "antennas": null,
+        "d": 0.6,
+        "hold": null
+      },
+      {
+        "head": null,
+        "antennas": null,
+        "d": 0.3,
+        "hold": 0.8
+      },
+      {
+        "head": {
+          "roll": 0.0,
+          "pitch": 0.0
+        },
+        "antennas": null,
+        "d": 0.6,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "lean_in_nod": {
+    "kind": "keyframes",
+    "description": "前傾して頷く",
+    "frames": [
+      {
+        "head": {
+          "pitch": 10.0,
+          "x": 15.0
+        },
+        "antennas": null,
+        "d": 0.5,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": 16.0
+        },
+        "antennas": null,
+        "d": 0.3,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": 10.0
+        },
+        "antennas": null,
+        "d": 0.3,
+        "hold": null
+      },
+      {
+        "head": null,
+        "antennas": null,
+        "d": 0.3,
+        "hold": 0.6
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "lean_in_hold": {
+    "kind": "keyframes",
+    "description": "体を乗り出してじっと見つめる",
+    "frames": [
+      {
+        "head": {
+          "pitch": 8.0,
+          "x": 18.0
+        },
+        "antennas": null,
+        "d": 0.7,
+        "hold": null
+      },
+      {
+        "head": null,
+        "antennas": null,
+        "d": 0.3,
+        "hold": 2.0
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "sweep_bottom_to_top": {
+    "kind": "keyframes",
+    "description": "下から上へ視線を動かす",
+    "frames": [
+      {
+        "head": {
+          "pitch": 20.0
+        },
+        "antennas": null,
+        "d": 0.5,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": -12.0
+        },
+        "antennas": null,
+        "d": 1.2,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": 0.0
+        },
+        "antennas": null,
+        "d": 0.5,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "roll_twist": {
+    "kind": "keyframes",
+    "description": "ひねる・回す",
+    "frames": [
+      {
+        "head": {
+          "roll": -20.0
+        },
+        "antennas": null,
+        "d": 0.4,
+        "hold": null
+      },
+      {
+        "head": {
+          "roll": 20.0
+        },
+        "antennas": null,
+        "d": 0.6,
+        "hold": null
+      },
+      {
+        "head": {
+          "roll": -15.0
+        },
+        "antennas": null,
+        "d": 0.5,
+        "hold": null
+      },
+      {
+        "head": {
+          "roll": 0.0
+        },
+        "antennas": null,
+        "d": 0.4,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "antenna_twitch": {
+    "kind": "keyframes",
+    "description": "アンテナだけ小さく動かす(アイドル用)",
+    "frames": [
+      {
+        "head": null,
+        "antennas": [
+          25.0,
+          25.0
+        ],
+        "d": 0.2,
+        "hold": null
+      },
+      {
+        "head": null,
+        "antennas": [
+          10.0,
+          10.0
+        ],
+        "d": 0.3,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "greet_wiggle": {
+    "kind": "recorded",
+    "description": "アンテナと首を振る(welcoming1)",
+    "frames": [],
+    "file": "welcoming1",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "welcoming": {
+    "kind": "recorded",
+    "description": "歓迎(welcoming2)",
+    "frames": [],
+    "file": "welcoming2",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "happy_lean": {
+    "kind": "recorded",
+    "description": "大きめに斜めになる(cheerful1)",
+    "frames": [],
+    "file": "cheerful1",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "happy_lean_short": {
+    "kind": "recorded",
+    "description": "短い喜び(cheerful1 前半)",
+    "frames": [],
+    "file": "cheerful1",
+    "start": null,
+    "end": 1.6,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "antenna_clap": {
+    "kind": "recorded",
+    "description": "拍手のようにアンテナをたたく(success1)",
+    "frames": [],
+    "file": "success1",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "enthusiastic": {
+    "kind": "recorded",
+    "description": "張り切る(enthusiastic1)",
+    "frames": [],
+    "file": "enthusiastic1",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "calm_antennas": {
+    "kind": "recorded",
+    "description": "頭は静止、アンテナだけゆっくり(serenity1)",
+    "frames": [],
+    "file": "serenity1",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "head_lower": {
+    "kind": "recorded",
+    "description": "頭を下げる(downcast1 前半)",
+    "frames": [],
+    "file": "downcast1",
+    "start": null,
+    "end": 3.0,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "nod_slow_deep": {
+    "kind": "recorded",
+    "description": "深くゆっくり頷く(understanding1)",
+    "frames": [],
+    "file": "understanding1",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "nod_big_x2": {
+    "kind": "keyframes",
+    "description": "大きく頷く×2",
+    "frames": [
+      {
+        "head": {
+          "pitch": 18.0
+        },
+        "antennas": null,
+        "d": 0.35,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": 0.0
+        },
+        "antennas": null,
+        "d": 0.35,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": 18.0
+        },
+        "antennas": null,
+        "d": 0.35,
+        "hold": null
+      },
+      {
+        "head": {
+          "pitch": 0.0
+        },
+        "antennas": null,
+        "d": 0.4,
+        "hold": null
+      }
+    ],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "banzai_small": {
+    "kind": "recorded",
+    "description": "小さくバンザイ(amazed1)",
+    "frames": [],
+    "file": "amazed1",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "beckon": {
+    "kind": "recorded",
+    "description": "手を差し伸べる(come1)",
+    "frames": [],
+    "file": "come1",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "head_tilt": {
+    "kind": "recorded",
+    "description": "頭を傾ける(inquiring2)",
+    "frames": [],
+    "file": "inquiring2",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "antenna_pikopiko": {
+    "kind": "recorded",
+    "description": "アンテナをぴこぴこ(inquiring3)",
+    "frames": [],
+    "file": "inquiring3",
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "thoughtful": {
+    "kind": "recorded",
+    "description": "考え込む(thoughtful1 前半)",
+    "frames": [],
+    "file": "thoughtful1",
+    "start": null,
+    "end": 4.0,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "point_sample": {
+    "kind": "point",
+    "description": "お手本の方を向いて頷く",
+    "frames": [],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": "sample",
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "point_photo": {
+    "kind": "point",
+    "description": "写真カードの方を向いて頷く",
+    "frames": [],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": "photo",
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "point_pieces": {
+    "kind": "point",
+    "description": "ピースの方を向いて頷く",
+    "frames": [],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": "pieces",
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "look_up_nod": {
+    "kind": "point",
+    "description": "上を向いて頷く",
+    "frames": [],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": "up",
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": []
+  },
+  "happy_lean_clap": {
+    "kind": "sequence",
+    "description": "大きめに斜め → 小さく拍手",
+    "frames": [],
+    "file": null,
+    "start": null,
+    "end": null,
+    "speed": 1.0,
+    "normalize_xyz": true,
+    "target": null,
+    "turn_s": 0.6,
+    "hold_s": 0.4,
+    "nod_deg": 8.0,
+    "steps": [
+      "happy_lean",
+      "antenna_clap"
+    ]
+  }
+}
