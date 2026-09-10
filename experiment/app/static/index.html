@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<meta name="color-scheme" content="light">
+<title>Reachy Mini 実験コントローラ</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-screen="start">
+
+<!-- トースト（全画面共通） -->
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<!-- ============================================================ 開始画面 -->
+<section id="screen-start" class="screen screen-start">
+  <header class="page-header">
+    <h1>Reachy Mini 実験コントローラ</h1>
+    <div class="page-header-right">
+      <span id="start-version" class="muted"></span>
+      <button type="button" id="link-settings-start" class="btn">設定</button>
+    </div>
+  </header>
+
+  <div id="start-warnings" class="warnings" hidden></div>
+
+  <div class="start-grid">
+    <div class="card">
+      <h2>準備チェック</h2>
+      <ul id="preflight-list" class="preflight"></ul>
+      <div class="row row-between">
+        <button type="button" id="btn-preflight-retry" class="btn" disabled>再試行</button>
+        <span id="start-conn" class="muted"></span>
+      </div>
+    </div>
+
+    <form id="start-form" class="card" novalidate autocomplete="off">
+      <h2>セッション</h2>
+      <label class="field">
+        <span class="field-label">お名前（ひらがな）</span>
+        <input type="text" id="in-child-name" class="input-lg" placeholder="例: ゆい" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+      </label>
+      <div id="err-child-name" class="field-error" hidden>ひらがなで入力してください</div>
+
+      <div class="field">
+        <span class="field-label">呼び方</span>
+        <div class="seg" id="seg-suffix" role="radiogroup">
+          <button type="button" data-value="ちゃん" class="active">ちゃん</button>
+          <button type="button" data-value="くん">くん</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label">順序条件</span>
+        <div class="seg" id="seg-order" role="radiogroup">
+          <button type="button" data-value="robot_first" class="active">ロボット先行</button>
+          <button type="button" data-value="experimenter_first">実験者先行</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label">励まし条件</span>
+        <div class="seg" id="seg-condition" role="radiogroup">
+          <button type="button" data-value="empathy" class="active">共感</button>
+          <button type="button" data-value="logical">論理</button>
+        </div>
+      </div>
+
+      <button type="submit" id="btn-start" class="btn btn-primary btn-xl" disabled>準備してはじめる</button>
+      <div id="start-hint" class="muted start-hint"></div>
+    </form>
+  </div>
+
+  <footer class="page-footer">
+    <span id="start-credit">音声: VOICEVOX</span>
+  </footer>
+</section>
+
+<!-- ============================================================ 操作画面 -->
+<section id="screen-control" class="screen screen-control" hidden>
+  <header id="topbar" class="topbar">
+    <div class="topbar-row">
+      <div class="lamps">
+        <span class="lamp" id="lamp-robot"><i></i><b>ロボット</b><small></small></span>
+        <span class="lamp" id="lamp-server"><i></i><b>サーバー</b><small></small></span>
+        <span id="face-indicator" class="face" hidden>👀 顔検出中</span>
+      </div>
+      <div class="badges">
+        <span id="badge-child" class="badge badge-child"></span>
+        <span id="badge-condition" class="badge"></span>
+        <span id="badge-order" class="badge"></span>
+        <span id="phase-chip" class="chip"></span>
+      </div>
+      <div class="timers">
+        <div class="timer" id="main-box"><small>本番 残り</small><b id="main-timer">--:--</b></div>
+        <div class="timer" id="since-box"><small>前回の声かけ</small><b id="since-timer">—</b></div>
+      </div>
+    </div>
+    <div class="topbar-row topbar-row-2">
+      <div id="now-playing" class="now-playing"></div>
+    </div>
+  </header>
+
+  <div id="banner-disconnected" class="banner banner-red" hidden>
+    <b>ロボットと接続できていません</b>
+    <span id="banner-reason"></span>
+    <span class="banner-hint">LAN ケーブルと電源を確認してください。復旧すると自動で再開します。</span>
+  </div>
+
+  <main class="control-grid">
+    <!-- 左: イントロ -->
+    <section class="col col-intro">
+      <h2>イントロ</h2>
+      <div id="intro-buttons" class="btn-stack"></div>
+      <h2>フェーズ</h2>
+      <div class="btn-stack">
+        <button type="button" id="btn-phase-baseline" class="btn btn-lg btn-phase">ベースライン開始</button>
+        <button type="button" id="btn-phase-main" class="btn btn-lg btn-phase">本番開始（タイマー開始）</button>
+      </div>
+    </section>
+
+    <!-- 中央: 励まし -->
+    <section class="col col-enc">
+      <h2 id="enc-title">励まし</h2>
+      <div id="enc-buttons" class="btn-grid"></div>
+      <details class="other-cond">
+        <summary id="enc-other-title">もう一方の条件（誤操作注意）</summary>
+        <div id="enc-other-buttons" class="btn-grid"></div>
+      </details>
+    </section>
+
+    <!-- 右: 相づち・制御 -->
+    <section class="col col-right">
+      <h2>相づち</h2>
+      <div id="bc-buttons" class="btn-grid btn-grid-2"></div>
+      <h2>制御</h2>
+      <div class="btn-stack ctrl">
+        <button type="button" id="btn-stop" class="btn btn-stop btn-xl">■ ストップ</button>
+        <button type="button" id="btn-pause" class="btn btn-lg">一時停止</button>
+        <button type="button" id="btn-tracking" class="btn btn-lg">顔追跡 ON</button>
+        <button type="button" id="btn-end" class="btn btn-lg btn-outline-danger">セッション終了</button>
+        <button type="button" id="btn-rest" class="btn btn-lg">ロボットを休ませる</button>
+        <button type="button" id="link-settings-control" class="btn btn-lg btn-quiet">設定</button>
+      </div>
+    </section>
+  </main>
+
+  <details id="log-panel" class="log-panel">
+    <summary>ログ <span id="log-latest" class="log-latest"></span></summary>
+    <ul id="log-list" class="log-list"></ul>
+  </details>
+
+  <!-- 狭い画面用の固定ストップ -->
+  <button type="button" id="btn-stop-float" class="btn btn-stop btn-float">■ ストップ</button>
+
+  <!-- 休止中オーバーレイ -->
+  <div id="overlay-resting" class="overlay" hidden>
+    <div class="overlay-card">
+      <p class="overlay-title">ロボットは休止中です</p>
+      <p class="muted">モーターは OFF になっています。再開するには「起こす」を押してください。</p>
+      <button type="button" id="btn-wake-overlay" class="btn btn-primary btn-xl">起こす</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 設定画面 -->
+<section id="screen-settings" class="screen screen-settings" hidden>
+  <header class="page-header">
+    <h1>設定</h1>
+    <button type="button" id="link-back" class="btn btn-lg">操作画面へ戻る</button>
+  </header>
+  <nav class="tabs" id="settings-tabs">
+    <button type="button" data-tab="general" class="active">一般</button>
+    <button type="button" data-tab="positions">位置</button>
+    <button type="button" data-tab="voice">声</button>
+    <button type="button" data-tab="script">台本</button>
+    <button type="button" data-tab="motion">動作</button>
+  </nav>
+  <div id="tab-general" class="tab-panel"></div>
+  <div id="tab-positions" class="tab-panel" hidden></div>
+  <div id="tab-voice" class="tab-panel" hidden></div>
+  <div id="tab-script" class="tab-panel" hidden></div>
+  <div id="tab-motion" class="tab-panel" hidden></div>
+</section>
+
+<script src="/app.js"></script>
+</body>
+</html>
