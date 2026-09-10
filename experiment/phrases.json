@@ -1,0 +1,237 @@
+{
+  "intro": [
+    {
+      "id": "A1",
+      "label": "あいさつ＆自己紹介",
+      "text": "初めまして！ わたしは{robot}だよ。あなたのお名前はなんていうの？",
+      "gesture": "greet_wiggle",
+      "order": [],
+      "parts": []
+    },
+    {
+      "id": "A2",
+      "label": "名前への反応",
+      "text": "{child}っていうんだね！ 素敵なお名前だね。今日はいっしょに遊べてとっても嬉しいな！",
+      "gesture": "happy_lean_clap",
+      "order": [],
+      "parts": []
+    },
+    {
+      "id": "A3",
+      "label": "課題への誘いかけ",
+      "text": "これから一緒にブロックのゲームをしよう！ このピースを使って、お手本のお馬さんを作ってみてね。",
+      "gesture": "point_sample",
+      "order": [
+        "robot_first"
+      ],
+      "parts": []
+    },
+    {
+      "id": "A4",
+      "label": "応援・ベースラインスタート",
+      "text": "形や色をよく見ながら、順番に考えてみよう！ わたし、応援しているからね！",
+      "gesture": "nod_big_x2",
+      "order": [
+        "robot_first"
+      ],
+      "parts": []
+    },
+    {
+      "id": "A5",
+      "label": "本番スタート",
+      "text": null,
+      "gesture": null,
+      "order": [
+        "robot_first"
+      ],
+      "parts": [
+        {
+          "id": "A5-1",
+          "text": "できたね、よくがんばったね。それでは次のお手本を見せるから、今度はこれをつくってみよう。大丈夫かな？",
+          "gesture": "happy_lean"
+        },
+        {
+          "id": "A5-2",
+          "text": "それでははじめ！",
+          "gesture": "enthusiastic"
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "label": "本番スタート",
+      "text": null,
+      "gesture": null,
+      "order": [
+        "experimenter_first"
+      ],
+      "parts": [
+        {
+          "id": "A6-1",
+          "text": "さっきは{experimenter}とブロックで遊んだんだよね。今回は{robot}と一緒にあそびましょう。とっても楽しみ！",
+          "gesture": "welcoming"
+        },
+        {
+          "id": "A6-2",
+          "text": "それでは始めましょう。このお手本をブロックでつくってみよう。大丈夫かな？",
+          "gesture": "nod_gentle"
+        },
+        {
+          "id": "A6-3",
+          "text": "それでははじめ！",
+          "gesture": "enthusiastic"
+        }
+      ]
+    }
+  ],
+  "empathy": [
+    {
+      "id": "B1",
+      "trigger": "課題開始直後",
+      "text": "頑張っているね。応援してるよ！",
+      "gesture": "lean_in_nod"
+    },
+    {
+      "id": "B2",
+      "trigger": "停滞時・悩み",
+      "text": "考えているんだね。ゆっくりで大丈夫だよ。",
+      "gesture": "calm_antennas"
+    },
+    {
+      "id": "B3",
+      "trigger": "苦戦・足止め",
+      "text": "難しく感じることもあるよね。",
+      "gesture": "head_lower"
+    },
+    {
+      "id": "B4",
+      "trigger": "失敗時・崩れた時",
+      "text": "うまくいかなくて悔しいよね。",
+      "gesture": "tilt_sympathy"
+    },
+    {
+      "id": "B5",
+      "trigger": "諦めそうな時・おこり始めたら",
+      "text": "そういう気持ちになるよね。",
+      "gesture": "nod_slow_deep"
+    },
+    {
+      "id": "B6",
+      "trigger": "課題進行時",
+      "text": "だいぶできたね！いい感じに進んでいるね。",
+      "gesture": "banzai_small"
+    },
+    {
+      "id": "B7",
+      "trigger": "試行錯誤時",
+      "text": "大丈夫だよ。一緒に続けてみよう。",
+      "gesture": "beckon"
+    },
+    {
+      "id": "B8",
+      "trigger": "失敗後の再挑戦時",
+      "text": "もう一回やってみようと思ったんだね、すごいね！",
+      "gesture": "antenna_clap"
+    },
+    {
+      "id": "B9",
+      "trigger": "手が止まり不安そうな時",
+      "text": "焦らなくて大丈夫。自分のペースでやってみようね。",
+      "gesture": "shake_gentle_antenna_up"
+    },
+    {
+      "id": "B10",
+      "trigger": "集中している時",
+      "text": "一生懸命取り組んでいて、とってもかっこいいよ！",
+      "gesture": "lean_in_hold"
+    }
+  ],
+  "logical": [
+    {
+      "id": "C1",
+      "trigger": "課題開始直後・確認",
+      "text": "お手本をよく見てみよう。",
+      "gesture": "point_sample"
+    },
+    {
+      "id": "C2",
+      "trigger": "組み立て順序指示",
+      "text": "下から順番に作ってみよう。",
+      "gesture": "sweep_bottom_to_top"
+    },
+    {
+      "id": "C3",
+      "trigger": "視点変更",
+      "text": "後ろからの写真も見てみよう。",
+      "gesture": "point_photo"
+    },
+    {
+      "id": "C4",
+      "trigger": "形状の比較促し",
+      "text": "形は見本と一緒かな？",
+      "gesture": "head_tilt"
+    },
+    {
+      "id": "C5",
+      "trigger": "次のステップ",
+      "text": "次はどのピースを使うか考えてみよう。",
+      "gesture": "antenna_pikopiko"
+    },
+    {
+      "id": "C6",
+      "trigger": "部分完成・進行時",
+      "text": "できてきたね。このまま上の部分も作ってみよう！",
+      "gesture": "look_up_nod"
+    },
+    {
+      "id": "C7",
+      "trigger": "色の比較促し",
+      "text": "色が一緒か、もう一度お手本を見て確かめてみよう。",
+      "gesture": "point_sample"
+    },
+    {
+      "id": "C8",
+      "trigger": "ピースの向き確認",
+      "text": "ピースの向きを変えてみると、うまくはまるかも知れないよ。",
+      "gesture": "roll_twist"
+    },
+    {
+      "id": "C9",
+      "trigger": "崩れた・失敗時",
+      "text": "どこが違っていたか、もう一度見本と比べてみよう。",
+      "gesture": "point_sample"
+    },
+    {
+      "id": "C10",
+      "trigger": "残り時間の意識促し",
+      "text": "組み立て方の順番を、頭の中で整理してみよう。",
+      "gesture": "thoughtful"
+    }
+  ],
+  "backchannel": [
+    {
+      "id": "BC1",
+      "trigger": "",
+      "text": "うん",
+      "gesture": "nod_small"
+    },
+    {
+      "id": "BC2",
+      "trigger": "",
+      "text": "ちがうよ",
+      "gesture": "shake_small"
+    },
+    {
+      "id": "BC3",
+      "trigger": "",
+      "text": "そうだね",
+      "gesture": "nod_small"
+    },
+    {
+      "id": "BC4",
+      "trigger": "",
+      "text": "できたね",
+      "gesture": "happy_lean_short"
+    }
+  ]
+}
