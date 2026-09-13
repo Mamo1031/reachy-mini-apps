@@ -191,3 +191,29 @@ async def test_wait_idle(setup):
     assert player.is_playing
     assert await player.wait_idle(timeout=2.0)
     await task
+
+
+async def test_play_in_gaze_frame_offsets_head_and_freezes_body(setup):
+    from app.tracker import Gaze
+
+    settings, robot, player = setup
+    gaze = Gaze(body_yaw=0.3, head_yaw=0.4, pitch=0.05)
+    robot.present = NEUTRAL.with_(yaw=0.4, pitch=0.05, body_yaw=0.3)  # 追跡がすでにその向きにしている
+    await player.play(nod_traj(), pause_tracking=False, gaze=gaze)
+    heads = [p for _, p, head in robot.targets if head]
+    assert all(abs(p.body_yaw - 0.3) < 1e-9 for p in heads)  # 腰は視線の向きで固定
+    assert max(p.pitch for p in heads) == pytest.approx(0.3 + 0.05, abs=0.02)  # 時刻基準のサンプリング分の誤差
+    end = heads[-1]
+    assert end.yaw == pytest.approx(0.4) and end.pitch == pytest.approx(0.05) and end.body_yaw == pytest.approx(0.3)
+    assert player.neutral() == end  # ストップ時の戻り先も同じ
+    # 指さし(絶対座標)は頭の向きを重ねず、腰だけ固定
+    robot.targets.clear()
+    pt = Trajectory("pt", [(0.0, NEUTRAL), (0.3, NEUTRAL.with_(yaw=-0.6))], True, True)
+    await player.play(pt, pause_tracking=False, gaze=gaze)
+    heads = [p for _, p, head in robot.targets if head]
+    assert min(p.yaw for p in heads) == pytest.approx(-0.6, abs=0.01)
+    assert all(abs(p.body_yaw - 0.3) < 1e-9 for p in heads[1:])
+    # 視線なしなら従来どおりニュートラルへ
+    robot.targets.clear()
+    await player.play(nod_traj(), pause_tracking=False)
+    assert [p for _, p, head in robot.targets if head][-1] == NEUTRAL
