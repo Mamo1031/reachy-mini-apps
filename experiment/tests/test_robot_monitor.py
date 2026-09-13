@@ -40,7 +40,7 @@ async def test_goto_dropped_while_running_and_clear_moves(robot, fake):
     assert await robot.clear_moves() == 1
     assert await robot.running_moves() == []
     await robot.set_target(NEUTRAL)
-    assert fake.targets and fake.targets[-1][1]["target_body_yaw"] is None
+    assert fake.targets and fake.targets[-1][1]["target_body_yaw"] == 0.0  # ニュートラル = 腰も正面
     # 未知 uuid の stop は 500 → 握りつぶす
     await robot.stop_move("nope")
 
