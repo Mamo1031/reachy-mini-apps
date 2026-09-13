@@ -128,3 +128,52 @@ def test_pose_at_interpolates():
     assert traj.pose_at(-1).pitch == 0.0
     assert traj.pose_at(0.5).pitch == pytest.approx(0.5)
     assert traj.pose_at(5).pitch == 1.0
+
+
+def _lib_with_settings():
+    settings = Settings()
+    gestures = default_gestures()
+    return GestureLibrary(lambda: gestures, lambda: settings, MOVES), settings, gestures
+
+
+def test_tempo_stretches_every_kind_exactly_once():
+    lib, settings, _ = _lib_with_settings()
+    names = ("nod_small", "happy_lean", "point_sample", "happy_lean_clap")
+    base = {n: lib.build(n).duration for n in names}
+    speed1 = _max_head_speed(lib.build("nod_small").frames)
+    settings.motion.tempo = 2.0
+    for n in names:
+        assert lib.build(n).duration == pytest.approx(base[n] * 2.0, rel=1e-6), n
+    # sequence は部品を二重に伸ばさない(全体で 1 回だけ)
+    a, b = lib.build("happy_lean"), lib.build("antenna_clap")
+    assert lib.build("happy_lean_clap").duration == pytest.approx((a.duration + b.duration) / 2.0 * 2.0 + 0.35 * 2.0, abs=0.1)
+    assert _max_head_speed(lib.build("nod_small").frames) == pytest.approx(speed1 / 2.0, rel=1e-6)
+    # 「長すぎる」警告のしきい値もテンポに追従する
+    assert lib.validate() == []
+
+
+def test_amplitude_scales_excursion_but_not_point_direction():
+    lib, settings, gestures = _lib_with_settings()
+    roll1 = max(abs(p.roll) for _, p in lib.build("happy_lean").frames)
+    settings.motion.amplitude = 0.5
+    nod = lib.build("nod_small")
+    assert max(p.pitch for _, p in nod.frames) == pytest.approx(4 * DEG, abs=1e-6)
+    twitch = lib.build("antenna_twitch")
+    assert max(p.ant_l for _, p in twitch.frames) == pytest.approx(NEUTRAL.ant_l + (25 * DEG - NEUTRAL.ant_l) * 0.5, abs=1e-6)
+    assert not twitch.moves_head
+    assert max(abs(p.roll) for _, p in lib.build("happy_lean").frames) == pytest.approx(roll1 * 0.5, rel=1e-6)
+    # 指さしは向きを保ち、頷きだけ浅くなる
+    pt = lib.build("point_sample")
+    assert min(p.yaw for _, p in pt.frames) == pytest.approx(-35 * DEG, abs=1e-6)
+    assert max(p.pitch for _, p in pt.frames) == pytest.approx((10 + 4) * DEG, abs=1e-6)
+    assert lib.validate() == []
+
+
+def test_recorded_body_yaw_is_carried_into_the_trajectory():
+    lib, _, gestures = _lib_with_settings()
+    name = next(n for n in gestures.names() if gestures.get(n).file == "cheerful1")
+    traj = lib.build(name)
+    assert max(abs(p.body_yaw) for _, p in traj.frames) == pytest.approx(26.3 * DEG, abs=0.5 * DEG)
+    assert traj.moves_head
+    # 首の相対角は安全範囲に収まる
+    assert all(abs(p.yaw - p.body_yaw) <= 60 * DEG + 1e-9 for _, p in traj.frames)
