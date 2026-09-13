@@ -1,6 +1,6 @@
 {
   "robot": {
-    "base_url": "http://reachy-mini.local:8000",
+    "base_url": "http://192.168.100.2:8000",
     "connect_timeout_s": 1.0,
     "read_timeout_s": 3.0
   },
