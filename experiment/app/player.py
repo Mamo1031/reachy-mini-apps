@@ -2,7 +2,9 @@
 
 - 開始時は現在姿勢から ramp_in 秒で軌道の先頭へ、終了時は ramp_out 秒でニュートラルへ。
 - 時刻基準でフレームを選ぶので、通信が一瞬遅れてもフレームを飛ばして追いつく(間延びしない)。
-- 頭が動く軌道の間は顔追跡を weight 0 にし(検出は一時停止)、終わったら元の重みへ戻す。
+- 頭が動く軌道の間は顔追跡を weight 0 にし(検出は一時停止)、終わったら元の重みへ戻す(デーモン追跡のとき)。
+- アプリ側追跡のときは gaze(いま向いている方向)を受け取り、軌道をその方向に重ねて再生する。
+  ニュートラルへの戻りも gaze 基準なので、台詞のあとやストップで子どもから顔をそむけない。
 - キャンセルは協調的(毎ティックで確認)。`to_neutral=True` なら短いランプでニュートラルへ戻してから終わる。
 """
 
@@ -16,10 +18,14 @@ from typing import Awaitable, Callable
 from .config import Settings
 from .events import EventBus
 from .gestures import Trajectory
-from .pose import NEUTRAL, Pose, lerp_pose
+from .pose import DEG, NEUTRAL, Pose, lerp_pose
 from .robot import RobotBusy, RobotClient, RobotError
+from .tracker import Gaze
 
 log = logging.getLogger(__name__)
+
+REL_YAW_MAX = 60 * DEG  # 首の相対角の上限(デーモンは 65° を超えると腰を勝手に回す)
+PITCH_MAX = 35 * DEG  # gaze の pitch と軌道の pitch を足した後の上限
 
 
 class TrajectoryPlayer:
@@ -35,6 +41,8 @@ class TrajectoryPlayer:
         self.current: str | None = None
         self.last_sent: Pose = NEUTRAL
         self.tracking_paused = False
+        self._gaze: Gaze | None = None  # 直近の再生で使った視線(ニュートラルへの戻りも同じ基準)
+        self._world_frame = False
         self.transport = "http"  # 直近のフレーム送信経路(ws / http)
         # 直近の再生の実測(設定画面の「動作の送信状況」と実機検証用)
         self.stats: dict[str, float | int | str] = {"name": "", "frames": 0, "late": 0, "duration_s": 0.0, "hz": 0.0, "transport": ""}
@@ -63,11 +71,29 @@ class TrajectoryPlayer:
             self._abort = False
             self.is_playing = True
             try:
-                await self._ramp(self.last_sent, NEUTRAL, dur, period, head=True)
+                await self._ramp(self.last_sent, self.neutral(), dur, period, head=True)
             except RobotError as e:
                 log.warning("go_neutral failed: %s", e)
             finally:
                 self.is_playing = False
+
+    def neutral(self) -> Pose:
+        """戻り先のニュートラル(直近の再生で視線を渡されていればその方向)。"""
+        return self._with_gaze(NEUTRAL) if self._gaze is not None else NEUTRAL
+
+    def _with_gaze(self, pose: Pose) -> Pose:
+        """軌道の姿勢を、いま向いている方向(gaze)に重ねる。腰は gaze の向きで固定し、軌道の腰回転を足す。"""
+        g = self._gaze
+        if g is None:
+            return pose
+        body = g.body_yaw + pose.body_yaw
+        if self._world_frame:
+            yaw, pitch = pose.yaw, pose.pitch
+        else:
+            yaw, pitch = pose.yaw + g.head_yaw, pose.pitch + g.pitch
+        yaw = body + max(-REL_YAW_MAX, min(REL_YAW_MAX, yaw - body))
+        pitch = max(-PITCH_MAX, min(PITCH_MAX, pitch))
+        return pose.with_(yaw=yaw, pitch=pitch, body_yaw=body)
 
     async def play(
         self,
@@ -75,12 +101,14 @@ class TrajectoryPlayer:
         *,
         pause_tracking: bool,
         restore_tracking: Callable[[], Awaitable[None]] | None = None,
+        gaze: Gaze | None = None,
     ) -> None:
         """軌道を再生する。同時に 1 本だけ(ロックで直列化)。
 
-        pause_tracking: 頭を動かす軌道の間、顔追跡を weight 0 にする。
+        pause_tracking: 頭を動かす軌道の間、顔追跡を weight 0 にする(デーモン追跡のとき)。
         restore_tracking: 終了時に呼ぶコールバック(Performer.apply_tracking)。「開始時の重み」ではなく
             「終了時点で望ましい状態」を適用するため、再生中に追跡 OFF や一時停止に変わっても正しく戻る。
+        gaze: アプリ側追跡で向いている方向。軌道と戻り先のニュートラルをこの方向に重ねる。
         """
         async with self._lock:
             self._cancel.clear()
@@ -88,6 +116,8 @@ class TrajectoryPlayer:
             self._abort = False
             self.is_playing = True
             self.current = traj.name
+            self._gaze = gaze
+            self._world_frame = traj.world_frame
             try:
                 start = await self._present_pose()
                 # 現在姿勢をまず送っておく(追跡を止めた瞬間にスナップしないため)。アンテナだけの軌道なら頭は送らない
@@ -145,6 +175,8 @@ class TrajectoryPlayer:
         ramp_in = max(0.0, m.ramp_in_s)
         ramp_out = max(0.05, m.ramp_out_s)
         head = traj.moves_head
+        neutral = self.neutral()
+        first, last = self._with_gaze(traj.first), self._with_gaze(traj.last)
         t1 = ramp_in
         t2 = t1 + traj.duration
         t3 = t2 + ramp_out
@@ -155,17 +187,17 @@ class TrajectoryPlayer:
             while True:
                 if self._cancel.is_set():
                     if self._cancel_to_neutral:
-                        await self._ramp(self.last_sent, NEUTRAL, ramp_out, period, head=head)
+                        await self._ramp(self.last_sent, neutral, ramp_out, period, head=head)
                     return
                 t = time.monotonic() - t0
                 if t < t1 and ramp_in > 0:
-                    pose = lerp_pose(start, traj.first, t / t1)
+                    pose = lerp_pose(start, first, t / t1)
                 elif t < t2:
-                    pose = traj.pose_at(t - t1)
+                    pose = self._with_gaze(traj.pose_at(t - t1))
                 elif t < t3:
-                    pose = lerp_pose(traj.last, NEUTRAL, (t - t2) / ramp_out)
+                    pose = lerp_pose(last, neutral, (t - t2) / ramp_out)
                 else:
-                    await self._send(NEUTRAL, head=head)
+                    await self._send(neutral, head=head)
                     return
                 await self._send(pose, head=head)
                 frames += 1
