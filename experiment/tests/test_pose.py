@@ -108,3 +108,34 @@ def test_pose_to_matrix_flat_roundtrip():
     q = pose_from_matrix(m, p.ant_r, p.ant_l)
     for a in ("roll", "pitch", "yaw", "x", "y", "z"):
         assert abs(getattr(q, a) - getattr(p, a)) < 1e-9, a
+
+
+def test_clip_limits_body_yaw_and_relative_neck_yaw():
+    from app.pose import scale_pose  # noqa: F401  (imported below too)
+
+    env = Envelope()
+    p = clip(Pose(yaw=45 * DEG, body_yaw=-30 * DEG), env)  # 相対 75° → 60° に抑える(腰はそのまま)
+    assert p.body_yaw == pytest.approx(-30 * DEG)
+    assert p.yaw == pytest.approx(30 * DEG)
+    assert clip(Pose(body_yaw=100 * DEG), env).body_yaw == pytest.approx(45 * DEG)
+    assert clip(NEUTRAL, env) == NEUTRAL
+
+
+def test_scale_pose_scales_about_neutral():
+    from app.pose import scale_pose
+
+    p = Pose(pitch=10 * DEG, yaw=-20 * DEG, x=0.02, body_yaw=20 * DEG, ant_r=NEUTRAL.ant_r - 30 * DEG, ant_l=NEUTRAL.ant_l + 30 * DEG)
+    s = scale_pose(p, 0.5)
+    assert s.pitch == pytest.approx(5 * DEG) and s.yaw == pytest.approx(-10 * DEG) and s.x == pytest.approx(0.01)
+    assert s.body_yaw == pytest.approx(10 * DEG)
+    assert s.ant_r == pytest.approx(NEUTRAL.ant_r - 15 * DEG) and s.ant_l == pytest.approx(NEUTRAL.ant_l + 15 * DEG)
+    assert scale_pose(p, 1.0) == p
+    assert scale_pose(NEUTRAL, 0.3) == NEUTRAL
+
+
+def test_lerp_and_head_moves_include_body_yaw():
+    b = NEUTRAL.with_(body_yaw=10 * DEG)
+    assert lerp_pose(NEUTRAL, b, 1.0).body_yaw == pytest.approx(10 * DEG)
+    assert lerp_pose(NEUTRAL, b, 0.0).body_yaw == 0.0
+    assert head_moves([NEUTRAL, b])
+    assert not head_moves([NEUTRAL, NEUTRAL.with_(body_yaw=0.1 * DEG)])
