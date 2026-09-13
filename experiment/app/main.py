@@ -125,14 +125,15 @@ async def recover(*, wake: bool | None = None) -> None:
                     await robot.enable_motors()
                     await asyncio.sleep(0.3)
                 pose = await robot.present_pose()
-                if head_distance(pose, NEUTRAL) > 10 * DEG or antenna_distance(pose, NEUTRAL) > 60 * DEG:
+                if head_distance(pose, NEUTRAL) > 10 * DEG or abs(pose.body_yaw) > 10 * DEG or antenna_distance(pose, NEUTRAL) > 60 * DEG:
                     step("motors", "running", "ニュートラル姿勢へ移動中")
                     await robot.clear_moves()
                     # 追跡が weight 1.0 のままだと goto の頭部が無視されるので、先に止める
                     with contextlib.suppress(RobotError):
                         await robot.set_tracking(True, 0.0)
-                    await robot.goto(NEUTRAL, 2.0, body_yaw=0.0)
-                    if not await robot.wait_moves_done(4.0):
+                    dur = max(2.0, 2.0 * state.settings.motion.tempo)
+                    await robot.goto(NEUTRAL, dur, body_yaw=0.0)
+                    if not await robot.wait_moves_done(dur + 2.0):
                         state.bus.toast("warn", "ニュートラルへの移動が時間内に終わりませんでした")
                 else:
                     await robot.clear_moves()
@@ -593,6 +594,7 @@ async def robot_rest():
             if not await state.robot.wait_moves_done(8.0):
                 raise RobotError("スリープ姿勢への移動が終わりませんでした(モーターは ON のままにします)")
             await state.robot.disable_motors()
+            state.performer.tracker.reset_gaze()
     except RobotError as e:
         set_resting(False)
         with contextlib.suppress(RobotError):
