@@ -60,7 +60,7 @@
     ]
   },
   "motion": {
-    "tracking_enabled": false,
+    "tracking_enabled": true,
     "tracking_weight": 1.0,
     "wobbling_enabled": false,
     "stream_hz": 30.0,
