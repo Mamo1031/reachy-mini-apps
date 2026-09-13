@@ -824,9 +824,17 @@
     bPause.textContent = perf.paused ? '▶ 再開' : '⏸ 一時停止';
     bPause.classList.toggle('active', !!perf.paused);
     bPause.disabled = S.busy.has('pause');
+    // Face-tracking switch: show the current state (ON / OFF / paused) and what a press will do,
+    // so the label is never read as a command.
     const bTrack = $('#btn-tracking');
-    bTrack.textContent = perf.tracking_enabled ? '顔追跡 ON' : '顔追跡 OFF';
-    bTrack.classList.toggle('active', !!perf.tracking_enabled);
+    const trackingOn = !!perf.tracking_enabled;
+    const trackingPaused = trackingOn && !!perf.paused;
+    $('#tracking-state').textContent = trackingPaused ? '一時停止中' : (trackingOn ? 'ON' : 'OFF');
+    $('#tracking-hint').textContent = trackingOn ? '押すと OFF にする' : '押すと ON にする';
+    bTrack.classList.toggle('sw-on', trackingOn && !trackingPaused);
+    bTrack.classList.toggle('sw-paused', trackingPaused);
+    bTrack.classList.toggle('sw-off', !trackingOn);
+    bTrack.setAttribute('aria-checked', trackingOn ? 'true' : 'false');
     bTrack.disabled = S.busy.has('tracking');
     const bRest = $('#btn-rest');
     bRest.textContent = S.snap.resting ? '起こす' : 'ロボットを休ませる';
