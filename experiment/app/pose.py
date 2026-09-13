@@ -20,7 +20,11 @@ DEG = math.pi / 180.0
 
 @dataclass(frozen=True)
 class Pose:
-    """頭部 6 自由度 + アンテナ 2 本。rad / m。"""
+    """頭部 6 自由度 + アンテナ 2 本 + 腰(ベース)の回転。rad / m。
+
+    頭の yaw はデーモンと同じくワールド(ベース)座標系で、腰の回転を含んだ向き。
+    首の相対角 = yaw - body_yaw。
+    """
 
     roll: float = 0.0
     pitch: float = 0.0
@@ -30,6 +34,7 @@ class Pose:
     z: float = 0.0
     ant_r: float = -ANT_NEUTRAL_PHYSICAL
     ant_l: float = ANT_NEUTRAL_PHYSICAL
+    body_yaw: float = 0.0
 
     def with_(self, **kw: float) -> "Pose":
         return replace(self, **kw)
@@ -40,17 +45,29 @@ NEUTRAL = Pose()
 
 @dataclass(frozen=True)
 class Envelope:
-    """安全範囲(絶対値の上限)。rad / m。"""
+    """安全範囲(絶対値の上限)。rad / m。
+
+    rel_yaw は首の相対角(yaw - body_yaw)の上限。デーモンの IK は相対角が 65° を超えると
+    腰を勝手に回すので、その手前で頭側を抑える。
+    """
 
     roll: float = 30 * DEG
     pitch: float = 25 * DEG
     yaw: float = 45 * DEG
     xyz: float = 0.030
     antenna: float = 170 * DEG
+    body_yaw: float = 45 * DEG
+    rel_yaw: float = 60 * DEG
 
     @classmethod
     def from_degrees(
-        cls, roll_deg: float, pitch_deg: float, yaw_deg: float, xyz_mm: float, antenna_deg: float
+        cls,
+        roll_deg: float,
+        pitch_deg: float,
+        yaw_deg: float,
+        xyz_mm: float,
+        antenna_deg: float,
+        body_yaw_deg: float = 45.0,
     ) -> "Envelope":
         return cls(
             roll=roll_deg * DEG,
@@ -58,6 +75,7 @@ class Envelope:
             yaw=yaw_deg * DEG,
             xyz=xyz_mm / 1000.0,
             antenna=antenna_deg * DEG,
+            body_yaw=body_yaw_deg * DEG,
         )
 
 
@@ -66,24 +84,52 @@ def _clamp(v: float, lim: float) -> float:
 
 
 def clip(p: Pose, env: Envelope) -> Pose:
+    body_yaw = _clamp(p.body_yaw, env.body_yaw)
+    yaw = _clamp(p.yaw, env.yaw)
+    yaw = body_yaw + _clamp(yaw - body_yaw, env.rel_yaw)
     return Pose(
         roll=_clamp(p.roll, env.roll),
         pitch=_clamp(p.pitch, env.pitch),
-        yaw=_clamp(p.yaw, env.yaw),
+        yaw=yaw,
         x=_clamp(p.x, env.xyz),
         y=_clamp(p.y, env.xyz),
         z=_clamp(p.z, env.xyz),
         ant_r=_clamp(p.ant_r, env.antenna),
         ant_l=_clamp(p.ant_l, env.antenna),
+        body_yaw=body_yaw,
     )
 
 
 def clip_excess_deg(p: Pose, env: Envelope) -> float:
     """安全範囲を超えている最大量(度)。並進は 1 mm = 1° 相当として扱う(警告用)。"""
     c = clip(p, env)
-    ang = max(abs(p.roll - c.roll), abs(p.pitch - c.pitch), abs(p.yaw - c.yaw), abs(p.ant_r - c.ant_r), abs(p.ant_l - c.ant_l)) / DEG
+    ang = max(
+        abs(p.roll - c.roll),
+        abs(p.pitch - c.pitch),
+        abs(p.yaw - c.yaw),
+        abs(p.ant_r - c.ant_r),
+        abs(p.ant_l - c.ant_l),
+        abs(p.body_yaw - c.body_yaw),
+    ) / DEG
     lin = max(abs(p.x - c.x), abs(p.y - c.y), abs(p.z - c.z)) * 1000.0
     return max(ang, lin)
+
+
+def scale_pose(p: Pose, amp: float) -> Pose:
+    """ニュートラルからの振れ幅を amp 倍にする(頭と腰は 0 基準、アンテナは NEUTRAL 基準)。"""
+    if amp == 1.0:
+        return p
+    return Pose(
+        roll=p.roll * amp,
+        pitch=p.pitch * amp,
+        yaw=p.yaw * amp,
+        x=p.x * amp,
+        y=p.y * amp,
+        z=p.z * amp,
+        ant_r=NEUTRAL.ant_r + (p.ant_r - NEUTRAL.ant_r) * amp,
+        ant_l=NEUTRAL.ant_l + (p.ant_l - NEUTRAL.ant_l) * amp,
+        body_yaw=p.body_yaw * amp,
+    )
 
 
 def minjerk(s: float) -> float:
@@ -103,6 +149,7 @@ def lerp_pose(a: Pose, b: Pose, s: float, ease=minjerk) -> Pose:
         z=a.z + (b.z - a.z) * t,
         ant_r=a.ant_r + (b.ant_r - a.ant_r) * t,
         ant_l=a.ant_l + (b.ant_l - a.ant_l) * t,
+        body_yaw=a.body_yaw + (b.body_yaw - a.body_yaw) * t,
     )
 
 
@@ -146,9 +193,9 @@ def pose_to_matrix_flat(p: Pose) -> list[float]:
     ]
 
 
-def pose_from_matrix(m: Sequence[Sequence[float]], ant_r: float, ant_l: float) -> Pose:
+def pose_from_matrix(m: Sequence[Sequence[float]], ant_r: float, ant_l: float, body_yaw: float = 0.0) -> Pose:
     roll, pitch, yaw = mat_to_rpy(m)
-    return Pose(roll=roll, pitch=pitch, yaw=yaw, x=m[0][3], y=m[1][3], z=m[2][3], ant_r=ant_r, ant_l=ant_l)
+    return Pose(roll=roll, pitch=pitch, yaw=yaw, x=m[0][3], y=m[1][3], z=m[2][3], ant_r=ant_r, ant_l=ant_l, body_yaw=body_yaw)
 
 
 def antennas_from_physical(right_deg: float, left_deg: float) -> tuple[float, float]:
@@ -180,7 +227,7 @@ def antenna_distance(a: Pose, b: Pose) -> float:
 
 
 def head_moves(poses: Iterable[Pose], eps_rad: float = 0.5 * DEG, eps_m: float = 0.002) -> bool:
-    """頭部が動く軌道か(最初の姿勢からの最大偏差で判定)。"""
+    """頭部(または腰)が動く軌道か(最初の姿勢からの最大偏差で判定)。"""
     it = iter(poses)
     first = next(it, None)
     if first is None:
@@ -190,6 +237,7 @@ def head_moves(poses: Iterable[Pose], eps_rad: float = 0.5 * DEG, eps_m: float =
             abs(p.roll - first.roll) > eps_rad
             or abs(p.pitch - first.pitch) > eps_rad
             or abs(p.yaw - first.yaw) > eps_rad
+            or abs(p.body_yaw - first.body_yaw) > eps_rad
             or abs(p.x - first.x) > eps_m
             or abs(p.y - first.y) > eps_m
             or abs(p.z - first.z) > eps_m
