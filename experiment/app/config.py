@@ -96,6 +96,7 @@ class EnvelopeSettings(Base):
     yaw_deg: float = Field(45.0, gt=0, le=90)
     xyz_mm: float = Field(30.0, gt=0, le=60)
     antenna_deg: float = Field(170.0, gt=0, le=180)
+    body_yaw_deg: float = Field(45.0, gt=0, le=160)
 
 
 class IdleSettings(Base):
@@ -106,14 +107,42 @@ class IdleSettings(Base):
     gesture_tracking_off: str = "nod_small"
 
 
+class TrackingSettings(Base):
+    """顔追跡の方式と、アプリ側追跡(mode=app)の調整値。
+
+    mode=daemon: ロボット内蔵の追跡(首だけ、速さ固定)。mode=app: デーモンは検出器としてだけ使い、
+    首と腰の動きはアプリが作る(ゆっくり、腰も追従)。
+    """
+
+    mode: Literal["daemon", "app"] = "daemon"
+    detector_weight: float = Field(0.01, gt=0, le=0.2)  # 検出を動かし続けるための最小の重み(頭はほぼ引かれない)
+    poll_hz: float = Field(10.0, ge=2, le=30)
+    gain_h_deg: float = Field(44.0, ge=10, le=60)  # 顔位置 x=±1 が何度に相当するか(カメラの半画角)
+    gain_v_deg: float = Field(33.0, ge=10, le=60)
+    dead_zone_deg: float = Field(3.0, ge=0, le=15)
+    smoothing_s: float = Field(0.6, ge=0.05, le=3)
+    head_rate_deg_s: float = Field(25.0, ge=5, le=120)
+    body_rate_deg_s: float = Field(10.0, ge=1, le=60)
+    head_max_deg: float = Field(25.0, ge=5, le=45)  # 首の相対角の上限。超える分は腰が担う
+    body_max_deg: float = Field(35.0, ge=0, le=90)
+    body_follow_deg: float = Field(10.0, ge=0, le=45)  # 首がこの角度を超えたら腰が動き出す
+    pitch_up_deg: float = Field(15.0, ge=0, le=40)
+    pitch_down_deg: float = Field(20.0, ge=0, le=40)
+    lost_hold_s: float = Field(1.5, ge=0, le=10)
+    return_rate_deg_s: float = Field(8.0, ge=1, le=60)
+
+
 class MotionSettings(Base):
     tracking_enabled: bool = True
     tracking_weight: float = Field(1.0, ge=0, le=1)
+    tracking: TrackingSettings = Field(default_factory=TrackingSettings)
     wobbling_enabled: bool = False
     stream_hz: float = Field(30.0, ge=10, le=60)  # 実機は 1 リクエスト約 30 ms(接続の再利用ができない)ため 30 Hz が実用上限
     ramp_in_s: float = Field(0.3, ge=0, le=2)
     ramp_out_s: float = Field(0.4, ge=0.05, le=2)
     audio_lead_ms: float = Field(150.0, ge=0, le=2000)
+    tempo: float = Field(1.0, ge=0.5, le=3.0)  # 時間の倍率。1.5 なら全ての動きに 1.5 倍の時間をかける
+    amplitude: float = Field(1.0, ge=0.3, le=1.0)  # 振れ幅の倍率(ニュートラル基準)。指さしの向きには掛けない
     envelope: EnvelopeSettings = Field(default_factory=EnvelopeSettings)
     idle: IdleSettings = Field(default_factory=IdleSettings)
 
