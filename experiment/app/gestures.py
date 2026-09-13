@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import GestureDef, Gestures, Keyframe, Position, Settings
-from .pose import DEG, NEUTRAL, Envelope, Pose, antennas_from_physical, clip, clip_excess_deg, head_moves, lerp_pose, pose_from_matrix
+from .pose import DEG, NEUTRAL, Envelope, Pose, antennas_from_physical, clip, clip_excess_deg, head_moves, lerp_pose, pose_from_matrix, scale_pose
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ class Trajectory:
     name: str
     frames: list[tuple[float, Pose]]  # (秒, Pose)。時刻は 0 から単調増加
     moves_head: bool
+    world_frame: bool = False  # True: 頭の向きは絶対(指さし)。追跡で向いている方向に重ねない
 
     @property
     def duration(self) -> float:
@@ -77,7 +78,7 @@ def _apply_head(base: Pose, head: dict[str, float] | None) -> Pose:
         return base
     kw: dict[str, float] = {}
     for k, v in head.items():
-        if k in ("roll", "pitch", "yaw"):
+        if k in ("roll", "pitch", "yaw", "body_yaw"):
             kw[k] = float(v) * DEG
         elif k in ("x", "y", "z"):
             kw[k] = float(v) / 1000.0
@@ -142,7 +143,7 @@ def from_recorded(
     for n, i in enumerate(idx):
         fr = data[i]
         ant = fr.get("antennas") or [NEUTRAL.ant_r, NEUTRAL.ant_l]
-        p = pose_from_matrix(fr["head"], float(ant[0]), float(ant[1]))
+        p = pose_from_matrix(fr["head"], float(ant[0]), float(ant[1]), body_yaw=float(fr.get("body_yaw") or 0.0))
         if n == 0 and normalize_xyz:
             ox, oy, oz = p.x, p.y, p.z
         p = p.with_(x=p.x - ox, y=p.y - oy, z=p.z - oz)
@@ -150,16 +151,21 @@ def from_recorded(
     return out
 
 
-def point_frames(target: Position, g: GestureDef, hz: float, env: Envelope) -> list[tuple[float, Pose]]:
+def point_frames(target: Position, g: GestureDef, hz: float, env: Envelope, amp: float = 1.0) -> list[tuple[float, Pose]]:
+    """位置へ頭を向けて頷く。向きは設定どおり(amp は頷きの深さにだけ掛ける)。"""
     yaw, pitch = target.yaw_deg, target.pitch_deg
     kfs = [
         Keyframe(head={"yaw": yaw, "pitch": pitch}, d=g.turn_s),
         Keyframe(hold=g.hold_s),
-        Keyframe(head={"pitch": pitch + g.nod_deg}, d=0.3),
+        Keyframe(head={"pitch": pitch + g.nod_deg * amp}, d=0.3),
         Keyframe(head={"pitch": pitch}, d=0.3),
         Keyframe(hold=0.4),
     ]
     return from_keyframes(kfs, hz, env)
+
+
+def _scale_frames(frames: list[tuple[float, Pose]], amp: float) -> list[tuple[float, Pose]]:
+    return frames if amp == 1.0 else [(t, scale_pose(p, amp)) for t, p in frames]
 
 
 # ---------------------------------------------------------------- library
@@ -175,7 +181,7 @@ class GestureLibrary:
     # ------------------------------------------------------------ helpers
     def _env(self) -> Envelope:
         e = self.settings_ref().motion.envelope
-        return Envelope.from_degrees(e.roll_deg, e.pitch_deg, e.yaw_deg, e.xyz_mm, e.antenna_deg)
+        return Envelope.from_degrees(e.roll_deg, e.pitch_deg, e.yaw_deg, e.xyz_mm, e.antenna_deg, e.body_yaw_deg)
 
     def _hz(self) -> float:
         return max(10.0, float(self.settings_ref().motion.stream_hz))
@@ -205,8 +211,10 @@ class GestureLibrary:
         if _depth > 3:
             raise GestureError(f"ジェスチャーの入れ子が深すぎます: {name}")
         env, hz = self._env(), self._hz()
+        m = self.settings_ref().motion
+        amp = float(m.amplitude)
         if g.kind == "keyframes":
-            frames = from_keyframes(g.frames, hz, env)
+            frames = _scale_frames(from_keyframes(g.frames, hz, env), amp)
         elif g.kind == "recorded":
             if not g.file:
                 raise GestureError(f"{name}: file が未指定です")
@@ -214,11 +222,12 @@ class GestureLibrary:
                 frames = from_recorded(self.load_doc(g.file), env, start=g.start, end=g.end, speed=g.speed, normalize_xyz=g.normalize_xyz)
             except (KeyError, IndexError, TypeError, ValueError) as e:  # データ欠損・型違い
                 raise GestureError(f"{name}: モーション {g.file} のデータが不正です({type(e).__name__}: {e})") from e
+            frames = _scale_frames(frames, amp)
         elif g.kind == "point":
             positions = self.settings_ref().positions
             if not g.target or g.target not in positions:
                 raise GestureError(f"{name}: 位置 '{g.target}' が設定にありません")
-            frames = point_frames(positions[g.target], g, hz, env)
+            frames = point_frames(positions[g.target], g, hz, env, amp)
         elif g.kind == "sequence":
             frames = []
             t_off = 0.0
@@ -239,13 +248,18 @@ class GestureLibrary:
             raise GestureError(f"{name}: 未知の kind {g.kind}")
         if not frames:
             raise GestureError(f"{name}: フレームが空です")
-        return Trajectory(name=name, frames=frames, moves_head=head_moves(p for _, p in frames))
+        # 時間の倍率は最上位で 1 回だけ掛ける(sequence の部品は _depth > 0 で組むので二重にならない)
+        if _depth == 0 and m.tempo != 1.0:
+            frames = [(t * m.tempo, p) for t, p in frames]
+        return Trajectory(name=name, frames=frames, moves_head=head_moves(p for _, p in frames), world_frame=(g.kind == "point"))
 
     # ------------------------------------------------------------ validation
     def validate(self) -> list[str]:
         """全ジェスチャーを組み立てて問題を列挙する(起動時と設定保存時に呼ぶ)。"""
         warnings: list[str] = []
         env = self._env()
+        m = self.settings_ref().motion
+        unlimited = Envelope(roll=math.inf, pitch=math.inf, yaw=math.inf, xyz=math.inf, antenna=math.inf, body_yaw=math.inf, rel_yaw=math.inf)
         gestures = self.gestures_ref()
         for name in gestures.names():
             g = gestures.get(name)
@@ -257,10 +271,10 @@ class GestureLibrary:
                 continue
             # クリップ量は raw データで評価する(build 済みは既にクリップされている)
             if g.kind == "recorded" and g.file:
-                raw = from_recorded(self.load_doc(g.file), Envelope(roll=math.inf, pitch=math.inf, yaw=math.inf, xyz=math.inf, antenna=math.inf), start=g.start, end=g.end, speed=g.speed, normalize_xyz=g.normalize_xyz)
-                excess = max(clip_excess_deg(p, env) for _, p in raw)
+                raw = from_recorded(self.load_doc(g.file), unlimited, start=g.start, end=g.end, speed=g.speed, normalize_xyz=g.normalize_xyz)
+                excess = max(clip_excess_deg(scale_pose(p, m.amplitude), env) for _, p in raw)
                 if excess > 2.0:
                     warnings.append(f"{name}: 安全範囲で {excess:.0f}° 分クリップされます(設定 > 動作 > 可動域)")
-            if traj.duration > 8.0:
+            if traj.duration > 8.0 * m.tempo:
                 warnings.append(f"{name}: {traj.duration:.1f} 秒と長めです")
         return warnings
