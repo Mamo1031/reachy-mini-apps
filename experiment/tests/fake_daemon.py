@@ -38,6 +38,9 @@ class FakeDaemon:
     tracking_weight: float = 1.0
     wobbling: bool = False
     face_detected: bool = False
+    face_x: float = 0.0
+    face_y: float = 0.0
+    face_ts: float = 0.0
     moves: dict[str, FakeMove] = field(default_factory=dict)
     # 記録
     targets: list[tuple[float, dict[str, Any]]] = field(default_factory=list)
@@ -172,7 +175,11 @@ def make_app(fd: FakeDaemon) -> FastAPI:
 
     @app.get("/api/media/tracking/face")
     def tracking_face():
-        return {"status": "ok", "face_target": {"detected": fd.face_detected}}
+        # 実機と同じく、検出器が動いている(weight > 0)ときだけ結果が出る。ts は観測ごとに進む
+        if fd.face_detected and fd.tracking_enabled and fd.tracking_weight > 0:
+            fd.face_ts += 0.1
+            return {"status": "ok", "face_target": {"detected": True, "x": fd.face_x, "y": fd.face_y, "roll": 0.0, "ts": fd.face_ts}}
+        return {"status": "ok", "face_target": {"detected": False, "x": None, "y": None, "roll": None, "ts": None}}
 
     @app.post("/api/media/wobbling/enable")
     def wob_on():
