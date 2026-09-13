@@ -965,6 +965,7 @@
     s.motion = s.motion || {};
     s.motion.envelope = s.motion.envelope || {};
     s.motion.idle = s.motion.idle || {};
+    s.motion.tracking = s.motion.tracking || {};
     s.ui = s.ui || {};
   }
   function selectTab(name) {
@@ -1042,6 +1043,15 @@
     const sel = h('select', null, names.map((n) => h('option', { value: n }, info[n] ? `${n} — ${info[n]}` : n)));
     sel.value = cur || (names[0] || '');
     sel.addEventListener('change', () => { obj[key] = sel.value; });
+    return sel;
+  }
+  function trackingModeSelect(tr) {
+    const sel = h('select', null, [
+      h('option', { value: 'app' }, 'アプリで追跡（腰も使う・ゆっくり）'),
+      h('option', { value: 'daemon' }, 'ロボット内蔵（首だけ・速い）'),
+    ]);
+    sel.value = tr.mode === 'app' ? 'app' : 'daemon';
+    sel.addEventListener('change', () => { tr.mode = sel.value; });
     return sel;
   }
   function saveBar(fn, label) {
@@ -1336,6 +1346,7 @@
     const m = S.draft.settings.motion;
     const idle = m.idle;
     const env = m.envelope;
+    const tr = m.tracking;
     const ta = h('textarea', { class: 'json', id: 'gestures-json', rows: 18, spellcheck: false, placeholder: '読み込み中…' });
     ta.value = S.gesturesText == null ? '' : S.gesturesText;
     ta.addEventListener('input', () => { S.gesturesText = ta.value; });
@@ -1352,7 +1363,15 @@
       h('div', { class: 'card' },
         h('h3', null, '顔追跡・頭揺れ'),
         bindCheck(m, 'tracking_enabled', '顔追跡を有効にする（操作画面のトグルと同じ）'),
-        fieldRow('追跡の強さ（0–1）', bindRange(m, 'tracking_weight', { min: 0, max: 1, step: 0.05 })),
+        fieldRow('追跡の方式', trackingModeSelect(tr), 'アプリで追跡: 腰も使ってゆっくり向く。ロボット内蔵: 首だけで速い（調整不可）'),
+        row(fieldRow('首の速さ上限（°/秒）', bindNumber(tr, 'head_rate_deg_s', { min: 5, step: 5 })),
+          fieldRow('腰の速さ上限（°/秒）', bindNumber(tr, 'body_rate_deg_s', { min: 1, step: 1 })),
+          fieldRow('腰が動き出す首の角度（°）', bindNumber(tr, 'body_follow_deg', { min: 0, step: 1 }))),
+        row(fieldRow('反応しない範囲（°）', bindNumber(tr, 'dead_zone_deg', { min: 0, step: 0.5 })),
+          fieldRow('なめらかさ（秒）', bindNumber(tr, 'smoothing_s', { min: 0.05, step: 0.1 })),
+          fieldRow('見失ってから戻り始めるまで（秒）', bindNumber(tr, 'lost_hold_s', { min: 0, step: 0.5 })),
+          fieldRow('戻る速さ（°/秒）', bindNumber(tr, 'return_rate_deg_s', { min: 1, step: 1 }))),
+        fieldRow('ロボット内蔵のときの強さ（0–1）', bindRange(m, 'tracking_weight', { min: 0, max: 1, step: 0.05 })),
         bindCheck(m, 'wobbling_enabled', '頭揺れ（wobbling）を有効にする')),
       h('div', { class: 'card' },
         h('h3', null, 'アイドル動作'),
@@ -1361,6 +1380,8 @@
         row(fieldRow('顔追跡 ON のときの動作', gestureSelect(idle, 'gesture_tracking_on')), fieldRow('顔追跡 OFF のときの動作', gestureSelect(idle, 'gesture_tracking_off')))),
       h('div', { class: 'card' },
         h('h3', null, '動作タイミング'),
+        row(fieldRow('ゆっくりさ（時間の倍率）', bindRange(m, 'tempo', { min: 0.5, max: 3, step: 0.1 }), '1.0 = 定義どおりの速さ。1.5 なら 1.5 倍の時間をかけて動く'),
+          fieldRow('動きの大きさ', bindRange(m, 'amplitude', { min: 0.3, max: 1, step: 0.05 }), '1.0 = 定義どおり。小さくすると振れ幅が縮む（指さしの向きは変わらない）')),
         row(fieldRow('音声の先行（ms）', bindNumber(m, 'audio_lead_ms', { min: 0, step: 10 }), '音声開始から動作開始までの遅れ'),
           fieldRow('送信レート（Hz）', bindNumber(m, 'stream_hz', { min: 5, max: 100, step: 5 })),
           fieldRow('立ち上がり（秒）', bindNumber(m, 'ramp_in_s', { min: 0, step: 0.1 })),
@@ -1371,7 +1392,8 @@
           fieldRow('pitch（度）', bindNumber(env, 'pitch_deg', { min: 0, step: 1 })),
           fieldRow('yaw（度）', bindNumber(env, 'yaw_deg', { min: 0, step: 1 })),
           fieldRow('並進（mm）', bindNumber(env, 'xyz_mm', { min: 0, step: 1 })),
-          fieldRow('アンテナ（度）', bindNumber(env, 'antenna_deg', { min: 0, step: 5 })))),
+          fieldRow('アンテナ（度）', bindNumber(env, 'antenna_deg', { min: 0, step: 5 })),
+          fieldRow('腰（度）', bindNumber(env, 'body_yaw_deg', { min: 0, step: 5 })))),
       saveBar(saveSettings),
       h('div', { class: 'card' },
         h('h3', null, 'ジェスチャー定義（JSON）'),
