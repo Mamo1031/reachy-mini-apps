@@ -344,3 +344,14 @@ audio { width: 100%; margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation: none; }
 }
+
+/* Face-tracking switch (control screen): state pill + hint of what a press does */
+.btn-switch { display: flex; align-items: center; justify-content: flex-start; gap: 10px; text-align: left; flex-wrap: wrap; }
+.btn-switch .sw-label { font-weight: 600; }
+.btn-switch .sw-state { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 16px; background: #e6e9ee; color: var(--muted); }
+.btn-switch .sw-state::before { content: ''; width: 12px; height: 12px; border-radius: 50%; background: #9aa5b1; flex: none; }
+.btn-switch.sw-on .sw-state { background: var(--green-bg); color: var(--green); }
+.btn-switch.sw-on .sw-state::before { background: var(--green); }
+.btn-switch.sw-paused .sw-state { background: var(--amber-bg); color: #7a5a00; }
+.btn-switch.sw-paused .sw-state::before { background: var(--amber); }
+.btn-switch .sw-hint { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--muted); }
