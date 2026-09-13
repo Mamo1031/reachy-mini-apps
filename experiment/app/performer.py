@@ -26,6 +26,7 @@ from .monitor import ConnectionMonitor
 from .player import TrajectoryPlayer
 from .robot import RobotClient, RobotError, RobotHttpError
 from .session import SessionManager
+from .tracker import FaceTracker
 from .tts.base import TTSError
 
 log = logging.getLogger(__name__)
@@ -78,6 +79,8 @@ class Performer:
         self._tracking_dirty = False  # 追跡の適用に失敗した(接続回復後に再適用)
         self._idle_error: str | None = None
         self.last_idle_at = time.monotonic()
+        # アプリ側の顔追跡(mode=app のときだけ動く)。頭を使う再生中と復旧・休止中は送らない
+        self.tracker = FaceTracker(robot, settings_ref, bus, allowed=self._tracker_allowed)
 
     # ------------------------------------------------------------ state
     def state(self) -> dict[str, Any]:
@@ -86,6 +89,8 @@ class Performer:
             "paused": self.paused,
             "current": self.current,
             "tracking_enabled": self.settings_ref().motion.tracking_enabled,
+            "tracking_mode": self.settings_ref().motion.tracking.mode,
+            "tracker": self.tracker.status(),
             "server_time": time.time(),
             "motion_stats": dict(self.player.stats),
         }
@@ -217,13 +222,28 @@ class Performer:
             name2, _ = await self.audio.ensure(text)
             await self.robot.play_sound(name2)
 
+    async def _play(self, traj: Trajectory) -> None:
+        """軌道を再生する。追跡の扱いは方式で変わる。
+
+        アプリ側追跡: トラッカーを止め、いま向いている方向に軌道を重ねて再生し、終わったら実際に
+        送られている姿勢から追跡を続ける。デーモン追跡: 再生中は weight 0、終了時に設定へ戻す。
+        """
+        if self._app_mode():
+            self.tracker.suspend()
+            try:
+                await self.player.play(traj, pause_tracking=False, gaze=self.tracker.snapshot())
+            finally:
+                self.tracker.resume(sync_to=self.player.last_sent if traj.moves_head else None)
+        else:
+            await self.player.play(traj, pause_tracking=self._tracking_active(), restore_tracking=self.apply_tracking)
+
     async def _run_gesture(self, traj: Trajectory) -> None:
         try:
             m = self.settings_ref().motion
             lead = max(0.0, m.audio_lead_ms / 1000.0)
             if lead:
                 await asyncio.sleep(lead)
-            await self.player.play(traj, pause_tracking=self._tracking_active(), restore_tracking=self.apply_tracking)
+            await self._play(traj)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # 想定外でもタスクを静かに死なせない
@@ -340,21 +360,44 @@ class Performer:
     def _tracking_active(self) -> bool:
         return bool(self.settings_ref().motion.tracking_enabled) and not self.paused
 
+    def _app_mode(self) -> bool:
+        return self.settings_ref().motion.tracking.mode == "app"
+
+    def _tracker_allowed(self) -> bool:
+        return self._suspend == 0 and not self.resting_ref() and self.monitor.can_control() and not self.player.is_playing
+
     async def apply_tracking(self) -> None:
         """設定と一時停止状態から「今あるべき追跡状態」をロボットに適用する。
 
-        ジェスチャー再生中で追跡を止めている間は何もしない(再生終了時に同じ関数が呼ばれる)。
+        デーモン追跡でジェスチャー再生中に追跡を止めている間は何もしない(再生終了時に同じ関数が呼ばれる)。
+        アプリ側追跡: デーモンは検出器(小さな重み)としてだけ動かし、頭の動きはトラッカーが作る。
         """
         if self.player.tracking_paused and self.player.is_playing:
             return
         m = self.settings_ref().motion
         try:
-            if self._tracking_active():
-                await self.robot.set_tracking(True, m.tracking_weight)
-            elif self.paused:
-                await self.robot.set_tracking(True, 0.0)
+            if self._app_mode():
+                if self._tracking_active():
+                    await self.robot.set_tracking(True, m.tracking.detector_weight)
+                    self.tracker.start()
+                    self.tracker.park(False)
+                    self.tracker.resume()
+                elif self.paused:
+                    await self.robot.set_tracking(True, m.tracking.detector_weight)  # 検出は続ける(👀 は出る)
+                    self.tracker.start()
+                    self.tracker.park(True)
+                    self.tracker.resume()
+                else:
+                    await self.tracker.stop()
+                    await self.robot.set_tracking(False)
             else:
-                await self.robot.set_tracking(False)
+                await self.tracker.stop()
+                if self._tracking_active():
+                    await self.robot.set_tracking(True, m.tracking_weight)
+                elif self.paused:
+                    await self.robot.set_tracking(True, 0.0)
+                else:
+                    await self.robot.set_tracking(False)
         except RobotError:
             self._tracking_dirty = True
             raise
@@ -388,6 +431,7 @@ class Performer:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._idle_task
             self._idle_task = None
+        await self.tracker.stop()
 
     def _idle_allowed(self) -> bool:
         return (
@@ -458,7 +502,7 @@ class Performer:
 
             async def run() -> None:
                 try:
-                    await self.player.play(traj, pause_tracking=self._tracking_active(), restore_tracking=self.apply_tracking)
+                    await self._play(traj)
                 finally:
                     self.busy = False
                     self.last_idle_at = time.monotonic()
@@ -466,7 +510,8 @@ class Performer:
             self._play_task = asyncio.create_task(run(), name=f"gesture-test-{name}")
 
     async def on_reconnected(self) -> None:
-        """復旧後: 途中だった再生を idle に戻す。"""
+        """復旧後: 途中だった再生を idle に戻す。ロボットはニュートラルに戻されているので視線も 0 に。"""
+        self.tracker.reset_gaze()
         if self.current is not None or self.status != "idle" or self.busy:
             self._next_gen()
             self.current = None
