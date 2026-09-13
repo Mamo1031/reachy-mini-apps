@@ -139,7 +139,11 @@
       <div class="btn-stack ctrl">
         <button type="button" id="btn-stop" class="btn btn-stop btn-xl">■ ストップ</button>
         <button type="button" id="btn-pause" class="btn btn-lg">一時停止</button>
-        <button type="button" id="btn-tracking" class="btn btn-lg">顔追跡 ON</button>
+        <button type="button" id="btn-tracking" class="btn btn-lg btn-switch" role="switch" aria-checked="true">
+          <span class="sw-label">顔追跡</span>
+          <span class="sw-state" id="tracking-state">ON</span>
+          <span class="sw-hint" id="tracking-hint">押すと OFF にする</span>
+        </button>
         <button type="button" id="btn-end" class="btn btn-lg btn-outline-danger">セッション終了</button>
         <button type="button" id="btn-rest" class="btn btn-lg">ロボットを休ませる</button>
         <button type="button" id="link-settings-control" class="btn btn-lg btn-quiet">設定</button>
