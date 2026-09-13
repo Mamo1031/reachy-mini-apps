@@ -181,3 +181,56 @@ async def test_prewarm_texts(h):
     all_texts = h.performer.texts_for_prewarm(include_child=True)
     assert any("はなちゃんっていうんだね" in t for t in all_texts)
     assert any("ドラちゃん" in t for t in texts) and any("はるかお姉さん" in t for t in texts)
+
+
+async def test_app_mode_gesture_suspends_tracker_and_uses_detector_weight(h):
+    h.settings.motion.tracking.mode = "app"
+    h.settings.motion.tracking_enabled = True
+    await h.performer.apply_tracking()
+    assert h.fake.tracking_enabled and h.fake.tracking_weight == pytest.approx(0.01)
+    assert h.performer.tracker.running and not h.performer.tracker.suspended
+    await h.performer.play_phrase("BC1")
+    await asyncio.sleep(0.2)
+    assert h.performer.tracker.suspended  # 頭を使う再生中は送らない
+    await asyncio.sleep(1.3)
+    assert h.performer.tracker.running and not h.performer.tracker.suspended
+    assert h.fake.tracking_weight == pytest.approx(0.01)  # 1.0 や 0 に戻さない
+
+
+async def test_app_mode_stop_returns_to_gaze_neutral(h):
+    from app.pose import Pose
+
+    h.settings.motion.tracking.mode = "app"
+    h.settings.motion.tracking_enabled = True
+    await h.performer.apply_tracking()
+    h.performer.tracker.sync_from(Pose(yaw=0.3, pitch=0.05, body_yaw=0.2))
+    await h.performer.play_phrase("BC1")
+    await asyncio.sleep(0.3)
+    await h.performer.stop()
+    last = h.fake.targets[-1][1]
+    assert last["target_head_pose"]["yaw"] == pytest.approx(0.3, abs=0.02)
+    assert last["target_head_pose"]["pitch"] == pytest.approx(0.05, abs=0.02)
+    assert last["target_body_yaw"] == pytest.approx(0.2, abs=0.02)
+    assert not h.performer.tracker.suspended
+
+
+async def test_app_mode_pause_parks_and_disable_stops_tracker(h):
+    h.settings.motion.tracking.mode = "app"
+    h.settings.motion.tracking_enabled = True
+    await h.performer.apply_tracking()
+    await h.performer.pause()
+    assert h.performer.tracker.parked and h.fake.tracking_enabled and h.fake.tracking_weight == pytest.approx(0.01)
+    await h.performer.resume()
+    assert not h.performer.tracker.parked and h.performer.tracker.running
+    await h.performer.set_tracking(False)
+    assert not h.performer.tracker.running and h.fake.tracking_enabled is False
+
+
+async def test_mode_switch_back_to_daemon_stops_tracker(h):
+    h.settings.motion.tracking.mode = "app"
+    h.settings.motion.tracking_enabled = True
+    await h.performer.apply_tracking()
+    assert h.performer.tracker.running
+    h.settings.motion.tracking.mode = "daemon"
+    await h.performer.apply_tracking()
+    assert not h.performer.tracker.running and h.fake.tracking_weight == 1.0
