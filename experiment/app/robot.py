@@ -76,6 +76,27 @@ class DaemonStatus:
         )
 
 
+@dataclass
+class FaceObs:
+    """デーモンの顔検出結果。x, y は追跡用フレームでの鼻の位置(-1〜1、右と下が正)。ts はロボットの単調時刻。"""
+
+    detected: bool
+    x: float | None
+    y: float | None
+    ts: float | None
+
+    @classmethod
+    def from_json(cls, d: dict[str, Any]) -> "FaceObs":
+        ft = d.get("face_target") or {}
+        x, y, ts = ft.get("x"), ft.get("y"), ft.get("ts")
+        return cls(
+            detected=bool(ft.get("detected", False)),
+            x=float(x) if x is not None else None,
+            y=float(y) if y is not None else None,
+            ts=float(ts) if ts is not None else None,
+        )
+
+
 class TargetStream:
     """デーモンの WebSocket(/ws/sdk)へ `set_full_target` を送りっぱなしにする経路。
 
@@ -133,7 +154,7 @@ class TargetStream:
             "type": "set_full_target",
             "head": pose_to_matrix_flat(pose) if head else None,
             "antennas": antennas_payload(pose) if antennas else None,
-            "body_yaw": None,
+            "body_yaw": pose.body_yaw if head else None,
         }
         try:
             await asyncio.wait_for(self._ws.send(json.dumps(msg)), timeout=0.5)
@@ -296,6 +317,7 @@ class RobotClient:
             z=float(hp["z"]),
             ant_r=float(ant[0]),
             ant_l=float(ant[1]),
+            body_yaw=float(d.get("body_yaw") or 0.0),
         )
 
     # ------------------------------------------------------------ moves
@@ -326,7 +348,7 @@ class RobotClient:
             json={
                 "head_pose": head_payload(pose),
                 "antennas": antennas_payload(pose),
-                "body_yaw": body_yaw,
+                "body_yaw": pose.body_yaw if body_yaw is None else body_yaw,
                 "duration": duration,
                 "interpolation": "minjerk",
             },
@@ -345,7 +367,7 @@ class RobotClient:
         body = {
             "target_head_pose": head_payload(pose) if head else None,
             "target_antennas": antennas_payload(pose) if antennas else None,
-            "target_body_yaw": None,
+            "target_body_yaw": pose.body_yaw if head else None,
         }
         d = await self._post("/api/move/set_target", "set_target", json=body, timeout=0.5)
         if isinstance(d, dict) and d.get("status") == "ignored":
@@ -375,6 +397,10 @@ class RobotClient:
             await self._post("/api/media/tracking/enable", "顔追跡", json={"weight": max(0.0, min(1.0, weight))})
         else:
             await self._post("/api/media/tracking/disable", "顔追跡停止")
+
+    async def get_face(self, timeout: float | None = None) -> FaceObs:
+        d = await self._get("/api/media/tracking/face", "顔位置取得", timeout=timeout)
+        return FaceObs.from_json(d if isinstance(d, dict) else {})
 
     async def set_wobbling(self, enabled: bool) -> None:
         await self._post("/api/media/wobbling/enable" if enabled else "/api/media/wobbling/disable", "頭揺れ設定")
