@@ -160,6 +160,15 @@ def _default_positions() -> dict[str, Position]:
     }
 
 
+class PowerSettings(Base):
+    """電池切れの予兆(ロボットの稼働時間と低電圧アラーム)。ssh で読むので、ロボットに Mac の鍵を登録しておく。"""
+
+    enabled: bool = True
+    ssh_user: str = "pollen"
+    ssh_key: str = "~/.ssh/reachy_mini_ed25519"
+    interval_s: float = Field(15.0, ge=5, le=120)
+
+
 class Settings(Base):
     robot: RobotSettings = Field(default_factory=RobotSettings)
     names: NamesSettings = Field(default_factory=NamesSettings)
@@ -167,6 +176,7 @@ class Settings(Base):
     positions: dict[str, Position] = Field(default_factory=_default_positions)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     motion: MotionSettings = Field(default_factory=MotionSettings)
+    power: PowerSettings = Field(default_factory=PowerSettings)
     ui: UISettings = Field(default_factory=UISettings)
 
 
