@@ -28,6 +28,16 @@
 
   <div id="start-warnings" class="warnings" hidden></div>
 
+  <div id="start-resume" class="card resume-card" hidden>
+    <h2>前回のセッションが途中で終わっています</h2>
+    <p id="resume-desc" class="muted"></p>
+    <div class="row">
+      <button type="button" id="btn-resume" class="btn btn-primary btn-lg">続きから再開</button>
+      <button type="button" id="btn-discard" class="btn btn-lg btn-outline-danger">破棄</button>
+    </div>
+    <p class="muted resume-hint">「続きから再開」は同じ記録ファイルに続きを書き、本番のタイマーも中断前の時刻から続きます。「破棄」しても記録ファイルはそのまま残ります。</p>
+  </div>
+
   <div class="start-grid">
     <div class="card">
       <h2>準備チェック</h2>
