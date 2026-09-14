@@ -103,6 +103,12 @@
       "gesture_tracking_off": "nod_small"
     }
   },
+  "power": {
+    "enabled": true,
+    "ssh_user": "pollen",
+    "ssh_key": "~/.ssh/reachy_mini_ed25519",
+    "interval_s": 15.0
+  },
   "ui": {
     "debounce_ms": 500
   }
