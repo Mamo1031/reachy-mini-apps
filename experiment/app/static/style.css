@@ -356,6 +356,12 @@ audio { width: 100%; margin-top: 10px; }
 .btn-switch.sw-paused .sw-state::before { background: var(--amber); }
 .btn-switch .sw-hint { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--muted); }
 
+/* Resume card on the start screen (session interrupted by a server restart) */
+.resume-card { border: 2px solid var(--amber); background: var(--amber-bg); margin-bottom: 12px; }
+.resume-card h2 { margin-top: 0; }
+.resume-card .row { gap: 12px; }
+.resume-hint { font-size: 13px; margin-bottom: 0; }
+
 /* Battery hint chip (uptime / under-voltage) next to the lamps */
 .power { font-size: 14px; border-radius: 999px; padding: 3px 10px; font-weight: 600; background: #e6e9ee; color: var(--muted); white-space: nowrap; }
 .power.ok { background: var(--green-bg); color: var(--green); }
