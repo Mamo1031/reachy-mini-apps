@@ -42,6 +42,7 @@ from .gestures import GestureError, GestureLibrary
 from .monitor import ConnectionMonitor
 from .performer import PerformError, Performer
 from .player import TrajectoryPlayer
+from .power import PowerMonitor, fmt_uptime
 from .pose import DEG, NEUTRAL, antenna_distance, head_distance
 from .robot import RobotClient, RobotError
 from .session import SessionError, SessionManager
@@ -75,6 +76,7 @@ class AppState:
         self.player: TrajectoryPlayer
         self.session: SessionManager
         self.performer: Performer
+        self.power: PowerMonitor
         self.preflight: dict[str, dict[str, Any]] = {s: {"status": "pending", "message": ""} for s in PREFLIGHT_STEPS}
         self.preflight_task: asyncio.Task | None = None
         self.prewarm_task: asyncio.Task | None = None
@@ -323,7 +325,10 @@ async def build_state(
     state.preflight = {st: {"status": "pending", "message": ""} for st in PREFLIGHT_STEPS}
     for w in state.warnings:
         log.warning(w)
+    state.power = PowerMonitor(lambda: state.settings, state.bus, row=state.session.row)
     await state.monitor.start()
+    if robot_transport is None:
+        await state.power.start()
     start_preflight()
     state.performer.start_idle()
     log.info("experiment controller %s started", APP_VERSION)
@@ -336,6 +341,7 @@ async def shutdown_state() -> None:
         if t is not None:
             t.cancel()
     await state.monitor.stop()
+    await state.power.stop()
     with contextlib.suppress(Exception):
         state.session.end()
     await state.robot.aclose()
@@ -432,6 +438,7 @@ def snapshot() -> dict[str, Any]:
         "preflight": state.preflight,
         "resting": state.resting,
         "volume": state.volume,
+        "power": state.power.state.to_dict(),
         "warnings": state.warnings,
         "settings": s.model_dump(),
         "phrases": state.phrases.model_dump(),
@@ -479,6 +486,8 @@ async def session_start(body: SessionStart):
         state.prewarm_task.cancel()
     await state.performer.reset()  # 前の子どもの一時停止などを持ち越さない
     state.session.start(body.child_name, body.suffix, body.order, body.condition)
+    if state.power.state.available:
+        state.session.row("system", detail=f"robot uptime {fmt_uptime(state.power.state.uptime_s)}")
     try:
         failures = await prewarm_all(include_child=True)
         if failures:
@@ -773,5 +782,18 @@ async def set_volume(body: VolumeBody):
 
 
 # ================================================================ static UI(API より後にマウント)
+
+@app.middleware("http")
+async def revalidate_static(request: Request, call_next):
+    """画面のファイル(index.html / app.js / style.css)はブラウザに毎回確認させる。
+
+    ヘッダ無しだとブラウザが古い app.js を使い続け、更新しても画面に反映されない。
+    ETag 付きなので、変わっていなければ 304 で済み、コストはほぼ無い。
+    """
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
