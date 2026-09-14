@@ -538,6 +538,21 @@
     const pf = snap.preflight || {};
     $('#start-version').textContent = snap.app_version ? `v${snap.app_version}` : '';
 
+    // 中断したセッション（サーバー再起動など）の再開
+    const pend = snap.session && !snap.session.active ? snap.session.pending : null;
+    const rc = $('#start-resume');
+    rc.hidden = !pend;
+    if (pend) {
+      const cond = pend.condition === 'empathy' ? '共感' : '論理';
+      const order = pend.order === 'robot_first' ? 'ロボット先行' : '実験者先行';
+      const phaseLabel = { intro: 'イントロ', baseline: 'ベースライン', main: '本番', ended: '終了' }[pend.phase] || pend.phase;
+      const rem = pend.main_remaining_s == null ? '' : `・本番 残り ${fmtMMSS(pend.main_remaining_s)}`;
+      const ago = Math.max(0, Math.round((pend.age_s || 0) / 60));
+      $('#resume-desc').textContent = `${pend.child}・${cond}・${order}・${phaseLabel}${rem}（${ago} 分前に中断）`;
+      $('#btn-resume').disabled = S.busy.has('resume') || conn.state !== 'connected';
+      $('#btn-discard').disabled = S.busy.has('resume');
+    }
+
     // 警告（設定ファイルの復旧など）
     const warnBox = $('#start-warnings');
     const warnings = Array.isArray(snap.warnings) ? snap.warnings : [];
@@ -618,6 +633,26 @@
     err.hidden = ok || (!showError && name === '');
     input.classList.toggle('invalid', !ok && (showError || name !== ''));
     return ok ? name : null;
+  }
+
+  function resumeSession() {
+    control('resume', async () => {
+      const sess = await api('/api/session/resume', {}, { timeoutMs: 90000 });
+      if (sess && sess.active) {
+        applySession(sess);
+        showScreen('control');
+      } else {
+        toast('warn', 'セッションを再開できませんでした');
+        refreshState().catch(() => {});
+      }
+    });
+  }
+  function discardSession() {
+    if (!window.confirm('前回のセッションを破棄しますか？（記録ファイルはそのまま残ります）')) return;
+    control('resume', async () => {
+      await api('/api/session/discard', {});
+      await refreshState();
+    });
   }
 
   async function startSession(ev) {
@@ -1522,6 +1557,8 @@
     $('#btn-stop-float').addEventListener('click', doStop);
     $('#btn-pause').addEventListener('click', doPauseToggle);
     $('#btn-tracking').addEventListener('click', doTrackingToggle);
+    $('#btn-resume').addEventListener('click', resumeSession);
+    $('#btn-discard').addEventListener('click', discardSession);
     $('#btn-end').addEventListener('click', doEndSession);
     $('#btn-rest').addEventListener('click', doRestToggle);
     $('#btn-wake-overlay').addEventListener('click', doWake);
