@@ -199,3 +199,15 @@ async def test_tts_preview_browser_returns_wav(env):
     r = await c.post("/api/tts/preview", json={"text": "わたしは{robot}だよ", "target": "browser"})
     assert r.status_code == 200 and r.headers["content-type"] == "audio/wav" and r.content.startswith(b"RIFF")
     assert tts.calls[-1][0] == "わたしはドラちゃんだよ"
+
+
+async def test_ui_files_are_revalidated_by_the_browser(env):
+    """画面のファイルは no-cache(更新が即座に反映される)。API はそのまま。"""
+    c, _, _ = env
+    for path in ("/", "/app.js", "/style.css"):
+        r = await c.get(path)
+        assert r.status_code == 200, path
+        assert r.headers.get("cache-control") == "no-cache", path
+        assert r.headers.get("etag"), path
+    r = await c.get("/api/state")
+    assert r.status_code == 200 and "cache-control" not in r.headers
