@@ -62,6 +62,24 @@
   "motion": {
     "tracking_enabled": false,
     "tracking_weight": 1.0,
+    "tracking": {
+      "mode": "app",
+      "detector_weight": 0.01,
+      "poll_hz": 10.0,
+      "gain_h_deg": 44.0,
+      "gain_v_deg": 33.0,
+      "dead_zone_deg": 3.0,
+      "smoothing_s": 0.6,
+      "head_rate_deg_s": 25.0,
+      "body_rate_deg_s": 10.0,
+      "head_max_deg": 25.0,
+      "body_max_deg": 35.0,
+      "body_follow_deg": 10.0,
+      "pitch_up_deg": 15.0,
+      "pitch_down_deg": 20.0,
+      "lost_hold_s": 1.5,
+      "return_rate_deg_s": 8.0
+    },
     "wobbling_enabled": false,
     "stream_hz": 30.0,
     "ramp_in_s": 0.6,
@@ -83,10 +101,13 @@
       "jitter_s": 4.0,
       "gesture_tracking_on": "antenna_twitch",
       "gesture_tracking_off": "nod_small"
-    },
-    "tracking": {
-      "mode": "app"
     }
+  },
+  "power": {
+    "enabled": true,
+    "ssh_user": "pollen",
+    "ssh_key": "~/.ssh/reachy_mini_ed25519",
+    "interval_s": 15.0
   },
   "ui": {
     "debounce_ms": 500
