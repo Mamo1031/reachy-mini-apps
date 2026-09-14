@@ -6,7 +6,7 @@
   },
   "names": {
     "robot": "ドラちゃん",
-    "experimenter": "はるかお姉さん"
+    "experimenter": "はるかおねえさん"
   },
   "session": {
     "main_minutes": 8.0,
@@ -15,7 +15,7 @@
   "positions": {
     "sample": {
       "label": "お手本",
-      "yaw_deg": -35.0,
+      "yaw_deg": 35.0,
       "pitch_deg": 10.0
     },
     "photo": {
@@ -36,7 +36,7 @@
   },
   "tts": {
     "backend": "voicevox",
-    "voice_id": "1",
+    "voice_id": "3",
     "params": {
       "speed": 0.9,
       "pitch": 0.03,
@@ -60,19 +60,22 @@
     ]
   },
   "motion": {
-    "tracking_enabled": true,
+    "tracking_enabled": false,
     "tracking_weight": 1.0,
     "wobbling_enabled": false,
     "stream_hz": 30.0,
-    "ramp_in_s": 0.3,
-    "ramp_out_s": 0.4,
+    "ramp_in_s": 0.6,
+    "ramp_out_s": 0.8,
     "audio_lead_ms": 150.0,
+    "tempo": 1.5,
+    "amplitude": 0.85,
     "envelope": {
       "roll_deg": 30.0,
       "pitch_deg": 25.0,
       "yaw_deg": 45.0,
       "xyz_mm": 30.0,
-      "antenna_deg": 170.0
+      "antenna_deg": 170.0,
+      "body_yaw_deg": 45.0
     },
     "idle": {
       "enabled": true,
@@ -80,6 +83,9 @@
       "jitter_s": 4.0,
       "gesture_tracking_on": "antenna_twitch",
       "gesture_tracking_off": "nod_small"
+    },
+    "tracking": {
+      "mode": "app"
     }
   },
   "ui": {
