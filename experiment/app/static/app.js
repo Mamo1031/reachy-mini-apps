@@ -317,7 +317,7 @@
 
   // ------------------------------------------------------------------ イベント適用
   function handleEvent(type, data) {
-    if (type === 'snapshot') { applySnapshot(data); return; }
+    if (type === 'snapshot') { applySnapshot(data); S.powerAt = Date.now(); return; }
     if (type === 'heartbeat') { applyHeartbeat(data); return; }
     if (!S.snap) return; // snapshot 未受信なら無視
     const snap = S.snap;
@@ -369,6 +369,10 @@
         break;
       case 'volume':
         snap.volume = data.volume;
+        break;
+      case 'power':
+        snap.power = stripMeta(data);
+        S.powerAt = Date.now();
         break;
       case 'recovery':
       case 'error':
@@ -567,7 +571,8 @@
       setChildren(connBox, [h('span', { id: 'start-conn-text' }),
         snap.resting ? h('button', { type: 'button', class: 'btn btn-sm', onclick: doWake }, '起こす') : null]);
     }
-    $('#start-conn-text').textContent = snap.resting ? `${connText} — ロボットは休止中です ` : connText;
+    const up = uptimeText();
+    $('#start-conn-text').textContent = (snap.resting ? `${connText} — ロボットは休止中です ` : connText) + (up ? `（${up}）` : '');
     if (snap.resting) $('#start-conn').querySelector('button').disabled = S.busy.has('rest');
 
     // 開始ボタン
@@ -655,6 +660,45 @@
     tick();
   }
 
+  // ---- 電池の予兆（稼働時間 / 低電圧）。残量そのものはロボットから読めない
+  function uptimeText() {
+    const p = S.snap && S.snap.power;
+    if (!p || !p.available || p.uptime_s == null) return null;
+    const up = Math.max(0, p.uptime_s + (Date.now() - (S.powerAt || Date.now())) / 1000);
+    const hh = Math.floor(up / 3600);
+    const mm = Math.floor((up % 3600) / 60);
+    return `稼働 ${hh}:${String(mm).padStart(2, '0')}`;
+  }
+  function renderPower() {
+    const el = $('#power-chip');
+    if (!el || !S.snap) return;
+    const p = S.snap.power;
+    const enabled = !!(S.snap.settings && S.snap.settings.power && S.snap.settings.power.enabled);
+    if (!p || !enabled) { el.hidden = true; return; }
+    el.hidden = false;
+    el.classList.remove('ok', 'warn', 'bad', 'off');
+    if (!p.available) {
+      el.classList.add('off');
+      el.textContent = '🔋 —';
+      el.title = p.error || '稼働時間を取得できません';
+      return;
+    }
+    const up = uptimeText() || '';
+    if (p.undervoltage_now) {
+      el.classList.add('bad');
+      el.textContent = `⚡ 電圧低下（充電してください）・${up}`;
+      el.title = '電源電圧が下がっています。電池切れの前兆です';
+    } else if (p.undervoltage_occurred) {
+      el.classList.add('warn');
+      el.textContent = `⚡ 電圧低下あり・${up}`;
+      el.title = '起動後に一度、電源電圧が下がりました';
+    } else {
+      el.classList.add('ok');
+      el.textContent = `🔋 ${up}`;
+      el.title = 'ロボットの電源を入れてからの時間';
+    }
+  }
+
   function lampColor(state) {
     if (state === 'connected') return 'green';
     if (state === 'degraded' || state === 'recovering') return 'amber';
@@ -677,6 +721,7 @@
     setLamp($('#lamp-server'), S.serverOk ? 'green' : (S.serverConnecting ? 'amber' : 'red'),
       S.serverOk ? '' : (S.serverConnecting ? '再接続中…' : '切断'));
     $('#face-indicator').hidden = !conn.face_detected;
+    renderPower();
 
     $('#badge-child').textContent = sess.active ? sess.child : '';
     const cond = $('#badge-condition');
@@ -918,6 +963,8 @@
       mb.classList.remove('over', 'warn');
     }
 
+    renderPower();
+
     // 前回の声かけ
     const sb = $('#since-box');
     const st = $('#since-timer');
@@ -966,6 +1013,7 @@
     s.motion.envelope = s.motion.envelope || {};
     s.motion.idle = s.motion.idle || {};
     s.motion.tracking = s.motion.tracking || {};
+    s.power = s.power || {};
     s.ui = s.ui || {};
   }
   function selectTab(name) {
@@ -1104,6 +1152,13 @@
         row(fieldRow('本番の長さ（分）', bindNumber(d.session, 'main_minutes', { min: 0.5, step: 0.5 })),
           fieldRow('声かけ目安間隔（秒）', bindNumber(d.session, 'cue_interval_s', { min: 1, step: 1 }), 'この秒数を過ぎると「前回の声かけ」が黄色になります'),
           fieldRow('デバウンス（ms）', bindNumber(d.ui, 'debounce_ms', { min: 0, step: 50 }, { int: true }), '同じボタンの連打を無視する時間'))),
+      h('div', { class: 'card' },
+        h('h3', null, '電池の予兆（稼働時間・低電圧）'),
+        h('p', { class: 'muted' }, '残量そのものはロボットから読めません。代わりに、ロボットの起動からの時間と、電源電圧が下がった（電池切れの前兆）かどうかを ssh で読んで操作画面に出します。ロボットに Mac の鍵を登録しておく必要があります。'),
+        bindCheck(d.power, 'enabled', '稼働時間と低電圧を表示する'),
+        row(fieldRow('ssh ユーザー', bindText(d.power, 'ssh_user')),
+          fieldRow('鍵ファイル', bindText(d.power, 'ssh_key'), '例: ~/.ssh/reachy_mini_ed25519'),
+          fieldRow('確認間隔（秒）', bindNumber(d.power, 'interval_s', { min: 5, step: 5 })))),
       saveBar(saveSettings),
     ]);
   }
