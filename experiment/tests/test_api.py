@@ -211,3 +211,42 @@ async def test_ui_files_are_revalidated_by_the_browser(env):
         assert r.headers.get("etag"), path
     r = await c.get("/api/state")
     assert r.status_code == 200 and "cache-control" not in r.headers
+
+
+async def test_session_survives_server_restart(tmp_path):
+    """Ctrl+C → 再起動 → 「続きから再開」で同じ記録ファイル・同じタイマーが続く。"""
+    fake = FakeDaemon()
+    fake.motor_mode = "enabled"
+    tts = FakeTTS()
+    body = {"child_name": "はな", "suffix": "ちゃん", "order": "robot_first", "condition": "empathy"}
+
+    await main.build_state(data_dir=tmp_path, robot_transport=httpx.ASGITransport(app=make_app(fake)), tts=tts, monitor_interval=0.05)
+    main.state.settings.motion.idle.enabled = False
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://t") as c:
+        await wait_preflight(c)
+        r = await c.post("/api/session/start", json=body)
+        assert r.status_code == 200 and r.json()["active"]
+        stem = r.json()["log_stem"]
+        assert (await c.post("/api/session/phase", json={"phase": "main"})).json()["phase"] == "main"
+    await main.shutdown_state()  # サーバー停止(Ctrl+C)相当: end ではなく suspend
+
+    await main.build_state(data_dir=tmp_path, robot_transport=httpx.ASGITransport(app=make_app(fake)), tts=tts, monitor_interval=0.05)
+    main.state.settings.motion.idle.enabled = False
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://t") as c:
+            await wait_preflight(c)
+            st = (await c.get("/api/state")).json()
+            assert st["session"]["active"] is False
+            assert st["session"]["pending"]["child"] == "はなちゃん" and st["session"]["pending"]["phase"] == "main"
+            r = await c.post("/api/session/resume")
+            assert r.status_code == 200, r.text
+            sess = r.json()
+            assert sess["active"] and sess["phase"] == "main" and sess["log_stem"] == stem
+            assert 0 < sess["main_remaining_s"] < 8 * 60
+            assert (await c.get("/api/state")).json()["session"]["active"]
+            assert (await c.post("/api/session/resume")).status_code == 404  # もう候補は無い
+            await c.post("/api/session/end")
+            st = (await c.get("/api/state")).json()
+            assert st["session"]["active"] is False and st["session"]["pending"] is None
+    finally:
+        await main.shutdown_state()
