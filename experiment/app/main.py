@@ -302,6 +302,9 @@ async def build_state(
     state.warnings.extend(validate_phrases(state.phrases, set(state.gestures.names())))
     state.player = TrajectoryPlayer(state.robot, lambda: state.settings, state.bus)
     state.session = SessionManager(LOGS_DIR, state.bus, lambda: state.settings, lambda: state.phrases, APP_VERSION)
+    pending = state.session.load_pending()
+    if pending:
+        log.info("resumable session found: %s (%s)", pending["child"], pending["phase"])
     state.monitor = ConnectionMonitor(
         state.robot,
         state.bus,
@@ -343,7 +346,7 @@ async def shutdown_state() -> None:
     await state.monitor.stop()
     await state.power.stop()
     with contextlib.suppress(Exception):
-        state.session.end()
+        state.session.suspend()  # 次回起動で「続きから再開」できるように残す
     await state.robot.aclose()
     await state.tts.aclose()
 
@@ -529,6 +532,45 @@ async def session_intro_done(body: IntroDone):
 async def session_end():
     await state.performer.reset()
     state.session.end()
+    return state.session.snapshot()
+
+
+@app.post("/api/session/resume")
+async def session_resume():
+    """中断したセッションを続きから再開する(同じ CSV、タイマーは実時刻から)。"""
+    if state.session.pending is None:
+        raise PerformError("再開できるセッションがありません", 404)
+    if not state.monitor.can_control():
+        raise PerformError(f"ロボットと接続されていません({state.monitor.snapshot.reason})", 503)
+    if state.resting:
+        raise PerformError("ロボットが休止中です。「起こす」を押してください", 409)
+    if state.prewarm_task is not None and not state.prewarm_task.done():
+        state.prewarm_task.cancel()
+    await state.performer.reset()
+    state.session.resume()
+    if state.power.state.available:
+        state.session.row("system", detail=f"robot uptime {fmt_uptime(state.power.state.uptime_s)}")
+    try:
+        failures = await prewarm_all(include_child=True)
+        if failures:
+            raise PerformError("音声の準備に失敗したためセッションを再開できません: " + failures[0], 503)
+        present = await state.robot.list_sounds()
+        if any(n not in present for n in state.audio.wanted):
+            await state.audio.reupload_missing()
+    except Exception as e:
+        state.session.suspend()  # 再開候補として残す(次の試行でまた出る)
+        state.session.load_pending()
+        if isinstance(e, PerformError):
+            raise
+        step("synth", "fail", str(e))
+        raise PerformError(f"音声の準備に失敗したためセッションを再開できません: {e}", 503) from e
+    state.session.row("system", detail=f"audio ready ({len(state.audio.wanted)} files)")
+    return state.session.snapshot()
+
+
+@app.post("/api/session/discard")
+async def session_discard():
+    state.session.discard("discarded by the experimenter")
     return state.session.snapshot()
 
 
