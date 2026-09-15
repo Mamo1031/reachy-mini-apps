@@ -67,6 +67,7 @@ class VoiceParams(Base):
     volume: float = 1.0
     post_phoneme: float = 0.3
     pause_scale: float = 1.2
+    loudness_db: float = Field(0.0, ge=0, le=12)  # 圧縮で音量感を上げる量(大きな部屋向け)。クリップはしない
 
 
 class VoicevoxSettings(Base):
