@@ -43,7 +43,8 @@
       "intonation": 1.15,
       "volume": 1.0,
       "post_phoneme": 0.3,
-      "pause_scale": 1.2
+      "pause_scale": 1.2,
+      "loudness_db": 0.0
     },
     "voicevox": {
       "engine_dir": "tools/voicevox/macos-arm64",
