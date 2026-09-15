@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import Settings, VoiceParams
+from .loudness import process_wav
 from .robot import RobotClient
 from .tts.base import TTSBackend, TTSError
 
@@ -89,7 +90,10 @@ class AudioStore:
                 log.warning("corrupt cache %s (%s) — re-synthesizing", p.name, e)
                 p.unlink(missing_ok=True)
         vid, prm = self._voice()
-        wav = await self.tts.synthesize(text, voice_id or vid, params or prm)
+        prm = params or prm
+        wav = await self.tts.synthesize(text, voice_id or vid, prm)
+        if prm.loudness_db > 0:
+            wav = await asyncio.to_thread(process_wav, wav, prm.loudness_db)
         try:
             self._durations[key] = wav_duration(wav)
         except AudioError as e:
