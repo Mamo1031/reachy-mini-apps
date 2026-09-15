@@ -1244,6 +1244,7 @@
         fieldRow('音高', bindRange(p, 'pitch', { min: -0.15, max: 0.15, step: 0.01 })),
         fieldRow('抑揚', bindRange(p, 'intonation', { min: 0, max: 2, step: 0.05 })),
         fieldRow('音量（合成）', bindRange(p, 'volume', { min: 0, max: 2, step: 0.05 })),
+        fieldRow('声の張り（dB）', bindRange(p, 'loudness_db', { min: 0, max: 12, step: 1 }), '大きな部屋向け。上げるほど圧縮して音量感を上げる（音は割れない）'),
         fieldRow('末尾の余白（秒）', bindRange(p, 'post_phoneme', { min: 0, max: 1.5, step: 0.05 })),
         fieldRow('句読点の間（倍率）', bindRange(p, 'pause_scale', { min: 0.5, max: 2, step: 0.05 }))),
       h('div', { class: 'card' },
