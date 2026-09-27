@@ -198,7 +198,7 @@ async def test_tts_preview_browser_returns_wav(env):
     await wait_preflight(c)
     r = await c.post("/api/tts/preview", json={"text": "わたしは{robot}だよ", "target": "browser"})
     assert r.status_code == 200 and r.headers["content-type"] == "audio/wav" and r.content.startswith(b"RIFF")
-    assert tts.calls[-1][0] == "わたしはドラちゃんだよ"
+    assert tts.calls[-1][0] == "わたしはミミだよ"
 
 
 async def test_ui_files_are_revalidated_by_the_browser(env):
@@ -248,5 +248,88 @@ async def test_session_survives_server_restart(tmp_path):
             await c.post("/api/session/end")
             st = (await c.get("/api/state")).json()
             assert st["session"]["active"] is False and st["session"]["pending"] is None
+    finally:
+        await main.shutdown_state()
+
+
+async def test_state_reports_recording_coverage(env):
+    """操作画面が「どの台詞に録音があるか」を出せるよう、状態に含める。"""
+    c, _, _ = env
+    st = (await c.get("/api/state")).json()
+    rec = st["recordings"]
+    assert rec["source"] == "synth" and rec["available"] is True
+    s = (await c.get("/api/settings")).json()
+    s["tts"]["source"] = "recorded"
+    assert (await c.put("/api/settings", json=s)).status_code == 200
+    rec = (await c.get("/api/state")).json()["recordings"]
+    assert rec["source"] == "recorded"
+    assert isinstance(rec["missing"], list) and isinstance(rec["names"], list)
+    assert "BC1" in rec["missing"] or "BC1" in rec["ids"]
+
+
+async def test_rest_and_wake_work_without_a_session(env):
+    """セッション終了後(開始画面)でもロボットを休ませられる。休止中は起こすまで開始できない。"""
+    c, fake, _ = env
+    await wait_preflight(c)
+    assert (await c.get("/api/state")).json()["session"]["active"] is False
+    assert (await c.post("/api/robot/rest")).json()["resting"] is True
+    st = (await c.get("/api/state")).json()
+    assert st["resting"] is True and fake.motor_mode == "disabled"
+    r = await c.post("/api/session/start", json={"child_name": "はな", "suffix": "ちゃん", "order": "robot_first", "condition": "empathy"})
+    assert r.status_code == 409  # 休止中は開始できない
+    assert (await c.post("/api/robot/wake")).json()["resting"] is False
+    assert fake.motor_mode == "enabled"
+    r = await c.post("/api/session/start", json={"child_name": "はな", "suffix": "ちゃん", "order": "robot_first", "condition": "empathy"})
+    assert r.status_code == 200 and r.json()["active"]
+
+
+async def test_recorded_voice_starts_without_voicevox(tmp_path):
+    """録音の声だけで運用するときは VOICEVOX が無くても準備が通る。"""
+    from app.tts.base import TTSError
+
+    class BrokenTTS(FakeTTS):
+        async def ensure_ready(self, progress=None):
+            raise TTSError("VOICEVOX エンジンが見つかりません")
+
+    fake = FakeDaemon()
+    fake.motor_mode = "enabled"
+    await main.build_state(data_dir=tmp_path, robot_transport=httpx.ASGITransport(app=make_app(fake)), tts=BrokenTTS(), monitor_interval=0.05)
+    main.state.settings.motion.idle.enabled = False
+    main.state.settings.tts.source = "recorded"  # 録音が無い台詞は無音(fallback=silent)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://t") as c:
+            await c.post("/api/preflight")
+            await wait_preflight(c)
+            pf = (await c.get("/api/state")).json()["preflight"]
+            assert pf["voicevox"]["status"] == "ok" and "録音" in pf["voicevox"]["message"]
+            assert pf["synth"]["status"] == "ok"
+            r = await c.post("/api/session/start", json={"child_name": "はな", "suffix": "ちゃん", "order": "robot_first", "condition": "empathy"})
+            assert r.status_code == 200 and r.json()["active"]
+        # 合成に切り替えると VOICEVOX の失敗が見える
+        main.state.settings.tts.source = "synth"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://t") as c:
+            await c.post("/api/preflight")
+            await wait_for(lambda: main.state.preflight["voicevox"]["status"] == "fail", what="voicevox fail")
+            assert main.state.preflight["synth"]["status"] == "fail"
+    finally:
+        await main.shutdown_state()
+
+
+async def test_voice_list_is_empty_not_an_error_without_voicevox(tmp_path):
+    """VOICEVOX が無くても声の一覧はエラーにしない(録音の声だけで運用できるため)。"""
+    from app.tts.base import TTSError
+
+    class BrokenTTS(FakeTTS):
+        async def list_voices(self):
+            raise TTSError("VOICEVOX エンジンが見つかりません")
+
+    fake = FakeDaemon()
+    fake.motor_mode = "enabled"
+    await main.build_state(data_dir=tmp_path, robot_transport=httpx.ASGITransport(app=make_app(fake)), tts=BrokenTTS(), monitor_interval=0.05)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://t") as c:
+            r = await c.get("/api/voices")
+            assert r.status_code == 200 and r.json() == []
+            assert not [e for e in main.state.bus.recent if e.get("type") == "toast" and e.get("level") == "error"]
     finally:
         await main.shutdown_state()
