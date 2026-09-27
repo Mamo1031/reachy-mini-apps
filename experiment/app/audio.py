@@ -1,12 +1,17 @@
-"""音声ストア: 合成 WAV のキャッシュと、ロボットへのアップロード管理。
+"""音声ストア: 合成 WAV と録音した肉声のキャッシュ、ロボットへのアップロード管理。
 
-キャッシュキー = hash(バックエンド名 | 話者 | 音声パラメータ | 本文に含まれる辞書登録 | 展開後テキスト)。
+声の出どころは 2 つある(設定 `tts.source`)。
+- synth   : VOICEVOX で合成する。キー = hash(バックエンド | 話者 | パラメータ | 辞書 | 展開後テキスト)
+- recorded: `recordings/<声>/` の録音を使う。キー = hash(ファイルの中身と整形条件)。録音が無い台詞は
+            設定 `tts.recorded.fallback` に従って合成で代用するか、無音(name=None)を返す
+
 ロボット上のファイル名はキー + ".wav"(同名上書きなので再アップロードは冪等)。
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import io
 import logging
@@ -14,8 +19,11 @@ import wave
 from pathlib import Path
 from typing import Callable
 
+from dataclasses import dataclass
+
 from .config import Settings, VoiceParams
 from .loudness import process_wav
+from .recordings import RecordingLibrary, RecordingError
 from .robot import RobotClient
 from .tts.base import TTSBackend, TTSError
 
@@ -26,6 +34,14 @@ ProgressFn = Callable[[int, int, str], None]
 
 class AudioError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class SpeechItem:
+    """再生する 1 つの音声。key は録音を探すための鍵(台詞 ID か "names/ひとみちゃん")。"""
+
+    key: str
+    text: str
 
 
 def wav_duration(data: bytes) -> float:
@@ -50,7 +66,19 @@ class AudioStore:
         self._durations: dict[str, float] = {}
         self._uploaded: set[str] = set()  # ロボット上にあると分かっている basename
         self.wanted: dict[str, str] = {}  # basename → テキスト(今のセッションで必要なもの)
+        self._sources: dict[str, Path] = {}  # basename → 録音ファイル(合成ではなく録音を使ったもの)
+        self.recordings: RecordingLibrary | None = None
         self._lock = asyncio.Lock()
+
+    # ------------------------------------------------------------ source
+    def recording_for(self, key: str) -> Path | None:
+        """この台詞に使う録音ファイル(録音を使わない設定・録音が無い場合は None)。"""
+        if self.recordings is None or self.settings_ref().tts.source != "recorded":
+            return None
+        return self.recordings.find(key)
+
+    def _fallback_to_synth(self) -> bool:
+        return self.settings_ref().tts.recorded.fallback == "voicevox"
 
     # ------------------------------------------------------------ keys
     def _voice(self) -> tuple[str, VoiceParams]:
@@ -112,6 +140,18 @@ class AudioStore:
     def is_synthesized(self, text: str) -> bool:
         return self.path(self.key(text)).exists()
 
+    def is_ready(self, item: SpeechItem) -> bool:
+        """すぐ鳴らせるか(準備中の表示を出すかの判断)。"""
+        src = self.recording_for(item.key)
+        if src is not None:
+            s = self.settings_ref().tts
+            with contextlib.suppress(OSError):
+                return self.path(self.recordings.cache_key(src, loudness_db=s.params.loudness_db, trim=s.recorded.trim_silence)).exists()  # type: ignore[union-attr]
+            return False
+        if self.recordings is not None and self.settings_ref().tts.source == "recorded" and not self._fallback_to_synth():
+            return True  # 無音: 用意するものが無い
+        return self.is_synthesized(item.text)
+
     # ------------------------------------------------------------ upload
     async def ensure(self, text: str) -> tuple[str, float]:
         """合成(必要なら)→ アップロード(必要なら)。戻り値: (ロボット上の basename, 秒)。"""
@@ -124,9 +164,68 @@ class AudioStore:
                 self._uploaded.add(name)
             return name, self._durations[key]
 
+    async def ensure_item(self, item: SpeechItem) -> tuple[str | None, float]:
+        """録音か合成を用意してアップロードする。戻り値: (ロボット上の basename か None, 秒)。
+
+        None は「録音が無く、合成で代用しない設定」= 無音。呼び出し側は動作だけ再生する。
+        """
+        src = self.recording_for(item.key)
+        if src is not None:
+            async with self._lock:
+                return await self._ensure_recorded(src, item.text)
+        if self._fallback_to_synth() or self.settings_ref().tts.source != "recorded":
+            return await self.ensure(item.text)
+        return None, 0.0
+
+    async def _ensure_recorded(self, src: Path, text: str) -> tuple[str, float]:
+        """録音を整形してキャッシュ・アップロードする(ロックの中で呼ぶ)。"""
+        assert self.recordings is not None
+        s = self.settings_ref().tts
+        try:
+            key = self.recordings.cache_key(src, loudness_db=s.params.loudness_db, trim=s.recorded.trim_silence)
+        except OSError as e:
+            raise AudioError(f"録音を読めません({src.name}): {e}") from e
+        p, name = self.path(key), self.basename(key)
+        wav: bytes | None = None
+        if p.exists():
+            try:
+                self._durations[key] = wav_duration(p.read_bytes())
+            except AudioError:
+                log.warning("corrupt cache %s — re-preparing", p.name)
+                p.unlink(missing_ok=True)
+        if not p.exists():
+            try:
+                wav = await self.recordings.prepare_async(src, loudness_db=s.params.loudness_db, trim=s.recorded.trim_silence)
+            except RecordingError as e:
+                raise AudioError(str(e)) from e
+            self._durations[key] = wav_duration(wav)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_suffix(".tmp")
+            tmp.write_bytes(wav)
+            tmp.replace(p)
+        self.wanted[name] = text
+        self._sources[name] = src
+        if name not in self._uploaded:
+            await self.robot.upload_sound(name, wav if wav is not None else p.read_bytes())
+            self._uploaded.add(name)
+        return name, self._durations[key]
+
     def forget(self, name: str) -> None:
         """再生で 404 になった等、ロボット上に無いと分かった音声を忘れる(次の ensure で再アップロード)。"""
         self._uploaded.discard(name)
+
+    async def prewarm_items(self, items: list[SpeechItem], progress: ProgressFn | None = None) -> list[str]:
+        """まとめて用意(録音の整形 or 合成 + アップロード)。失敗は飛ばして続け、メッセージ一覧を返す。"""
+        failures: list[str] = []
+        for i, item in enumerate(items, 1):
+            if progress:
+                progress(i, len(items), item.text)
+            try:
+                await self.ensure_item(item)
+            except (TTSError, AudioError) as e:
+                failures.append(f"{item.text[:14]}…: {e}")
+                log.warning("prewarm failed for %r: %s", item.text, e)
+        return failures
 
     async def prewarm(self, texts: list[str], progress: ProgressFn | None = None, upload: bool = True) -> list[str]:
         """まとめて合成(+アップロード)。失敗したテキストは飛ばして続け、失敗メッセージの一覧を返す。"""
@@ -162,6 +261,11 @@ class AudioStore:
                 p = self.cache_dir / name
                 if p.exists():
                     wav = p.read_bytes()
+                elif name in self._sources:  # 録音: 元ファイルから作り直す(キーは変わらない)
+                    s = self.settings_ref().tts
+                    assert self.recordings is not None
+                    wav = await self.recordings.prepare_async(self._sources[name], loudness_db=s.params.loudness_db, trim=s.recorded.trim_silence)
+                    p.write_bytes(wav)
                 else:  # キャッシュが消えていれば合成し直す(名前が変わるので wanted を付け替える)
                     key, wav = await self.synthesize_cached(self.wanted[name])
                     if self.basename(key) != name:
