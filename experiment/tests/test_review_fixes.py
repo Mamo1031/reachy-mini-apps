@@ -26,6 +26,14 @@ class SlowTTS(FakeTTS):
         return await super().synthesize(text, voice_id, params)
 
 
+def use_slow_tts(delay: float) -> "SlowTTS":
+    """起動後に遅い合成器へ差し替える。準備(31 本の合成)を遅くしないため。"""
+    slow = SlowTTS(delay=delay)
+    main.state.tts = slow
+    main.state.audio.tts = slow
+    return slow
+
+
 async def _boot(tmp_path, tts=None):
     fake = FakeDaemon()
     tts = tts or FakeTTS()
@@ -90,11 +98,12 @@ async def test_stop_during_audio_lead_window_cancels_pending_gesture(env):
 
 
 async def test_stop_is_not_blocked_by_synthesis(tmp_path):
-    fake, tts = await _boot(tmp_path, SlowTTS(delay=1.5))
+    fake, tts = await _boot(tmp_path)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://t") as c:
         try:
-            await wait_preflight(c, timeout=90)
+            await wait_preflight(c)
             await start_session(c)
+            use_slow_tts(1.5)
             main.state.settings.names.robot = "ポチ"  # 未合成のテキストを作る
             play = asyncio.create_task(c.post("/api/play", json={"id": "A1"}))
             await asyncio.sleep(0.3)
@@ -110,11 +119,12 @@ async def test_stop_is_not_blocked_by_synthesis(tmp_path):
 
 
 async def test_new_button_during_preparing_supersedes_old(tmp_path):
-    fake, tts = await _boot(tmp_path, SlowTTS(delay=0.8))
+    fake, tts = await _boot(tmp_path)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://t") as c:
         try:
-            await wait_preflight(c, timeout=90)
+            await wait_preflight(c)
             await start_session(c)
+            use_slow_tts(0.8)
             main.state.settings.names.robot = "ポチ"
             p1 = asyncio.create_task(c.post("/api/play", json={"id": "A1"}))
             await asyncio.sleep(0.2)
