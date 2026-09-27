@@ -43,6 +43,7 @@ from .monitor import ConnectionMonitor
 from .performer import PerformError, Performer
 from .player import TrajectoryPlayer
 from .power import PowerMonitor, fmt_uptime
+from .recordings import RecordingLibrary
 from .pose import DEG, NEUTRAL, antenna_distance, head_distance
 from .robot import RobotClient, RobotError
 from .session import SessionError, SessionManager
@@ -86,6 +87,13 @@ class AppState:
 
 
 state = AppState()
+
+
+def make_recordings(settings: Settings, data_dir: Path = DATA_DIR) -> RecordingLibrary:
+    """録音フォルダ(settings.tts.recorded.dir)。無くても作る — あとから置けば次の準備で拾う。"""
+    r = settings.tts.recorded
+    base = Path(r.dir)
+    return RecordingLibrary(base if base.is_absolute() else data_dir / base, r.label)
 
 
 def make_tts(settings: Settings) -> TTSBackend:
@@ -177,12 +185,13 @@ async def recover(*, wake: bool | None = None) -> None:
         state.bus.toast("warn", "復旧の一部に失敗しました: " + "; ".join(errors))
 
 
-async def preflight() -> None:
-    """起動時(と「再試行」時)の準備。失敗しても UI に理由を出して待つ。"""
-    for s in PREFLIGHT_STEPS:
-        if state.preflight[s]["status"] != "ok":
-            step(s, "pending")
-    # 1) VOICEVOX
+def needs_tts(settings: Settings) -> bool:
+    """VOICEVOX が要るか。録音の声を使い、足りない台詞を無音にする設定なら要らない。"""
+    return settings.tts.source != "recorded" or settings.tts.recorded.fallback == "voicevox"
+
+
+async def prepare_tts() -> None:
+    """VOICEVOX を起動して読み辞書を登録する。失敗はステップに記録して続行する。"""
     step("voicevox", "running", "VOICEVOX を確認中")
     try:
         await state.tts.ensure_ready(progress=lambda m: step("voicevox", "running", m))
@@ -194,6 +203,18 @@ async def preflight() -> None:
         step("voicevox", "ok", "VOICEVOX 準備完了")
     except TTSError as e:
         step("voicevox", "fail", str(e))
+
+
+async def preflight() -> None:
+    """起動時(と「再試行」時)の準備。失敗しても UI に理由を出して待つ。"""
+    for s in PREFLIGHT_STEPS:
+        if state.preflight[s]["status"] != "ok":
+            step(s, "pending")
+    # 1) VOICEVOX(録音の声だけで運用するなら起動しない)
+    if needs_tts(state.settings):
+        await prepare_tts()
+    else:
+        step("voicevox", "ok", "録音の声を使うため起動しません")
     # 2) ロボット接続(監視ループが接続すると復旧手順 = motors/upload/tracking が走る)
     step("robot", "running", f"ロボットに接続中 {state.robot.base_url}")
     tries = 0
@@ -204,7 +225,7 @@ async def preflight() -> None:
         await asyncio.sleep(1.0)
     step("robot", "ok", f"接続 OK(daemon {state.monitor.snapshot.version or '?'})")
     # 3) 音声の事前合成(名前を含まないもの)
-    if state.preflight["voicevox"]["status"] == "ok":
+    if state.preflight["voicevox"]["status"] == "ok" or not needs_tts(state.settings):
         await prewarm_all(include_child=False)
     else:
         step("synth", "fail", "VOICEVOX が使えないため音声を準備できません")
@@ -219,9 +240,9 @@ async def preflight() -> None:
 async def prewarm_all(*, include_child: bool) -> list[str]:
     """台本の音声をまとめて合成・転送し、進捗を preflight の synth ステップに出す。失敗一覧を返す。"""
     step("synth", "running", "音声を準備中")
-    texts = state.performer.texts_for_prewarm(include_child=include_child)
+    items = state.performer.items_for_prewarm(include_child=include_child)
     try:
-        failures = await state.audio.prewarm(texts, progress=lambda i, t, txt: step("synth", "running", f"音声を準備中 {i}/{t}: {txt[:18]}…", progress=[i, t]))
+        failures = await state.audio.prewarm_items(items, progress=lambda i, t, txt: step("synth", "running", f"音声を準備中 {i}/{t}: {txt[:18]}…", progress=[i, t]))
     except RobotError as e:
         step("synth", "fail", str(e))
         return [str(e)]
@@ -230,7 +251,7 @@ async def prewarm_all(*, include_child: bool) -> list[str]:
         for f in failures[:3]:
             state.bus.toast("error", f"音声を作れませんでした: {f}")
     else:
-        step("synth", "ok", f"音声 {len(texts)} 件を準備済み")
+        step("synth", "ok", f"音声 {len(items)} 件を準備済み" + (f"（録音 {len(state.audio._sources)} 件）" if state.settings.tts.source == "recorded" else ""))
         step("upload", "ok", f"音声 {len(state.audio.wanted)} 件をロボットへ転送済み")
     return failures
 
@@ -294,6 +315,7 @@ async def build_state(
     state.robot = RobotClient(s.robot.base_url, connect_timeout=s.robot.connect_timeout_s, read_timeout=s.robot.read_timeout_s, transport=robot_transport)
     state.tts = tts or make_tts(s)
     state.audio = AudioStore(CACHE_DIR, state.robot, state.tts, lambda: state.settings)
+    state.audio.recordings = make_recordings(s, data_dir)
     state.gesture_lib = GestureLibrary(lambda: state.gestures, lambda: state.settings, MOVES_DIR)
     try:
         state.warnings.extend(state.gesture_lib.validate())
@@ -430,6 +452,16 @@ def heartbeat() -> dict[str, Any]:
     }
 
 
+def recordings_report() -> dict[str, Any]:
+    """UI 用: 録音がある台詞 / 無い台詞 / 名前の一覧。"""
+    lib = state.audio.recordings
+    if lib is None:
+        return {"source": state.settings.tts.source, "available": False}
+    child = state.session.current.child_display if state.session.current else None
+    ids = [leaf.id for leaf in state.phrases.leaves().values() if "{child}" not in leaf.text]
+    return {"source": state.settings.tts.source, "available": True, **lib.report(ids, child)}
+
+
 def snapshot() -> dict[str, Any]:
     s = state.settings
     return {
@@ -442,6 +474,7 @@ def snapshot() -> dict[str, Any]:
         "resting": state.resting,
         "volume": state.volume,
         "power": state.power.state.to_dict(),
+        "recordings": recordings_report(),
         "warnings": state.warnings,
         "settings": s.model_dump(),
         "phrases": state.phrases.model_dump(),
@@ -689,6 +722,8 @@ async def put_settings(body: dict[str, Any]):
         await state.robot.set_base_url(new.robot.base_url, new.robot.connect_timeout_s, new.robot.read_timeout_s)
         state.monitor.snapshot.robot_url = new.robot.base_url
         state.monitor.poll_now()
+    if new.tts.recorded != old.tts.recorded:
+        state.audio.recordings = make_recordings(new)
     if new_tts is not None:
         old_tts = state.tts
         state.tts = new_tts
@@ -762,7 +797,12 @@ async def put_gestures(body: dict[str, Any]):
 
 @app.get("/api/voices")
 async def voices():
-    return [{"id": v.id, "name": v.name, "credit": v.credit} for v in await state.tts.list_voices()]
+    """合成の声の一覧。VOICEVOX が動いていなくてもエラーにしない(録音の声だけで運用できるため)。"""
+    try:
+        return [{"id": v.id, "name": v.name, "credit": v.credit} for v in await state.tts.list_voices()]
+    except TTSError as e:
+        log.info("voice list unavailable: %s", e)
+        return []
 
 
 class PreviewBody(BaseModel):
