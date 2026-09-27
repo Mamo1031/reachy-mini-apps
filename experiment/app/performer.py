@@ -18,7 +18,7 @@ import random
 import time
 from typing import Any, AsyncIterator, Callable
 
-from .audio import AudioError, AudioStore
+from .audio import AudioError, AudioStore, SpeechItem
 from .config import Phrases, Settings, expand
 from .events import EventBus
 from .gestures import GestureError, GestureLibrary, Trajectory
@@ -111,15 +111,30 @@ class Performer:
         child = self.session.current.child_display if self.session.current else "〇〇ちゃん"
         return expand(text, robot=s.names.robot, child=child, experimenter=s.names.experimenter)
 
+    def speech_item(self, leaf: Any) -> SpeechItem:
+        """台詞 1 つ分の音声の指定。名前入りの台詞だけは録音を「名前」で探す。"""
+        text = self.expand_text(leaf.text)
+        if "{child}" in leaf.text and self.session.current is not None:
+            return SpeechItem(key=f"names/{self.session.current.child_display}", text=text)
+        return SpeechItem(key=leaf.id, text=text)
+
     def texts_for_prewarm(self, include_child: bool) -> list[str]:
         """事前合成すべきテキスト(重複なし)。include_child=False なら名前を含むものは除く。"""
-        out: list[str] = []
+        return [item.text for item in self.items_for_prewarm(include_child)]
+
+    def items_for_prewarm(self, include_child: bool) -> list[SpeechItem]:
+        """事前に用意すべき音声(重複なし)。include_child=False なら名前を含むものは除く。"""
+        out: list[SpeechItem] = []
+        seen: set[tuple[str, str]] = set()
         for leaf in self.phrases_ref().leaves().values():
             if "{child}" in leaf.text and not include_child:
                 continue
-            t = self.expand_text(leaf.text)
-            if t not in out:
-                out.append(t)
+            item = self.speech_item(leaf)
+            sig = (item.key if self.audio.recording_for(item.key) else "", item.text)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            out.append(item)
         return out
 
     @contextlib.asynccontextmanager
@@ -151,7 +166,8 @@ class Performer:
 
         gen = self._next_gen()
         self.busy = True
-        text = self.expand_text(leaf.text)
+        item = self.speech_item(leaf)
+        text = item.text
         traj: Trajectory | None = None
         try:
             traj = self.gestures.build(leaf.gesture)
@@ -161,9 +177,9 @@ class Performer:
 
         # --- 音声の準備(ロックの外。ストップや次のボタンを待たせない)
         try:
-            if not self.audio.is_synthesized(text):
+            if not self.audio.is_ready(item):
                 self._set_status("preparing")
-            name, duration = await self.audio.ensure(text)
+            name, duration = await self.audio.ensure_item(item)
         except (TTSError, RobotError, AudioError) as e:
             if self._gen == gen:
                 self.busy = False
@@ -181,8 +197,12 @@ class Performer:
                 self.session.row("button", item_id=phrase_id, text=text, gesture=leaf.gesture)
             else:
                 self.session.row("system", item_id=phrase_id, gesture=leaf.gesture, detail="test phrase")
+            silent = name is None
+            if silent:  # 録音が無い台詞: 動作だけ再生する(記録には残す)
+                duration = traj.duration if traj is not None else 1.0
             try:
-                await self._play_sound_with_retry(name, text)
+                if name is not None:
+                    await self._play_sound_with_retry(name, item)
             except RobotError as e:
                 self.busy = False
                 self._set_status("idle")
@@ -196,6 +216,7 @@ class Performer:
                 "started_at": time.time(),
                 "duration": duration,
                 "test": not log_it,
+                "silent": silent,
             }
             self._set_status("playing")
             if log_it:
@@ -204,13 +225,13 @@ class Performer:
                 if leaf.category == "intro":
                     with contextlib.suppress(Exception):
                         self.session.mark_intro_done(phrase_id)
-                self.session.row("playing", item_id=phrase_id, text=text, gesture=leaf.gesture, detail=f"{duration:.2f}s")
+                self.session.row("playing", item_id=phrase_id, text=text, gesture=leaf.gesture, detail=f"{duration:.2f}s" + ("（録音なし・無音）" if silent else ""))
             if traj is not None:
                 self._play_task = asyncio.create_task(self._run_gesture(traj), name=f"gesture-{phrase_id}")
             self._finish_task = asyncio.create_task(self._finish_after(duration + 0.2, gen, phrase_id, log_it), name=f"finish-{phrase_id}")
             return {"accepted": True, "id": phrase_id, "duration": duration}
 
-    async def _play_sound_with_retry(self, name: str, text: str) -> None:
+    async def _play_sound_with_retry(self, name: str, item: SpeechItem) -> None:
         """再生。ロボット上から音声が消えていた(404)ら再アップロードして 1 回だけやり直す。"""
         try:
             await self.robot.play_sound(name)
@@ -219,8 +240,9 @@ class Performer:
                 raise
             log.warning("sound %s missing on robot; re-uploading", name)
             self.audio.forget(name)
-            name2, _ = await self.audio.ensure(text)
-            await self.robot.play_sound(name2)
+            name2, _ = await self.audio.ensure_item(item)
+            if name2 is not None:
+                await self.robot.play_sound(name2)
 
     async def _play(self, traj: Trajectory) -> None:
         """軌道を再生する。追跡の扱いは方式で変わる。
