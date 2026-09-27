@@ -579,16 +579,21 @@
     const connText = conn.state === 'connected'
       ? `ロボット接続中（${conn.robot_url || ''}）`
       : `ロボット: ${CONN_LABEL[conn.state] || conn.state || '不明'}${conn.reason ? '：' + conn.reason : ''}`;
+    // 休ませる / 起こす は開始画面にも出す(セッション終了後に休ませられるように)
     const connBox = $('#start-conn');
-    const connMode = snap.resting ? 'resting' : 'normal';
+    const canRest = !snap.resting && conn.state === 'connected';
+    const connMode = snap.resting ? 'resting' : (canRest ? 'can-rest' : 'normal');
     if (connBox.dataset.mode !== connMode) {
       connBox.dataset.mode = connMode;
-      setChildren(connBox, [h('span', { id: 'start-conn-text' }),
-        snap.resting ? h('button', { type: 'button', class: 'btn btn-sm', onclick: doWake }, '起こす') : null]);
+      const btn = snap.resting
+        ? h('button', { type: 'button', class: 'btn btn-sm', onclick: doWake }, '起こす')
+        : (canRest ? h('button', { type: 'button', class: 'btn btn-sm', onclick: doRestToggle }, 'ロボットを休ませる') : null);
+      setChildren(connBox, [h('span', { id: 'start-conn-text' }), btn]);
     }
     const up = uptimeText();
     $('#start-conn-text').textContent = (snap.resting ? `${connText} — ロボットは休止中です ` : connText) + (up ? `（${up}）` : '');
-    if (snap.resting) $('#start-conn').querySelector('button').disabled = S.busy.has('rest');
+    const restBtn = connBox.querySelector('button');
+    if (restBtn) restBtn.disabled = S.busy.has('rest');
 
     // 開始ボタン
     const synthOk = pf.synth && pf.synth.status === 'ok';
@@ -600,6 +605,7 @@
       btn.dataset.mode = mode;
       setChildren(btn, S.starting ? [h('span', { class: 'spinner' }), '名前の音声を準備中…'] : ['準備してはじめる']);
     }
+    renderNameRecordingHint();
     const hint = $('#start-hint');
     if (S.starting) hint.textContent = '名前入りの音声を合成してロボットへ転送しています（最大 15 秒ほど）';
     else if (!ready) {
@@ -610,6 +616,23 @@
     } else hint.textContent = '';
 
     renderStartCredit();
+  }
+
+  /** 録音の声を使うとき、入力された名前の録音があるかを開始画面に出す。 */
+  function renderNameRecordingHint() {
+    const box = $('#name-recording-hint');
+    if (!box) return;
+    const rec = (S.snap && S.snap.recordings) || {};
+    const name = ($('#in-child-name').value || '').trim();
+    if (rec.source !== 'recorded' || !rec.available || !name || !HIRAGANA_RE.test(name)) {
+      box.hidden = true;
+      return;
+    }
+    const full = name + segValue('seg-suffix');
+    const ok = (rec.names || []).includes(full);
+    box.hidden = false;
+    box.className = ok ? 'field-note ok' : 'field-note warn';
+    box.textContent = ok ? `「${full}」の録音を使います` : `「${full}」の録音がありません（名前を呼ぶ台詞は無音になります）`;
   }
 
   function renderStartCredit() {
@@ -1128,6 +1151,28 @@
     sel.addEventListener('change', () => { obj[key] = sel.value; });
     return sel;
   }
+  function voiceSourceSelect(tts, rec) {
+    const label = (rec && rec.label) || '録音';
+    const sel = h('select', null, [
+      h('option', { value: 'recorded' }, label),
+      h('option', { value: 'synth' }, '合成（VOICEVOX）'),
+    ]);
+    sel.value = tts.source === 'recorded' ? 'recorded' : 'synth';
+    sel.addEventListener('change', () => { tts.source = sel.value; });
+    return sel;
+  }
+  function recordingStatus(rec) {
+    if (!rec || !rec.available) return h('p', { class: 'muted' }, '録音フォルダが見つかりません。');
+    const have = (rec.ids || []).length;
+    const missing = rec.missing || [];
+    const names = rec.names || [];
+    return h('div', null,
+      h('p', { class: 'muted' }, `録音のある台詞: ${have} 本（${rec.dir || ''}）`),
+      missing.length
+        ? h('p', { class: 'warn-text' }, `録音が無い台詞（無音になります）: ${missing.join('、')}`)
+        : h('p', { class: 'muted' }, 'すべての台詞に録音があります。'),
+      h('p', { class: 'muted' }, names.length ? `名前入りの録音: ${names.join('、')}` : '名前入りの録音はまだありません。'));
+  }
   function trackingModeSelect(tr) {
     const sel = h('select', null, [
       h('option', { value: 'app' }, 'アプリで追跡（腰も使う・ゆっくり）'),
@@ -1233,9 +1278,14 @@
     previewInput.value = S.previewText;
     previewInput.addEventListener('input', () => { S.previewText = previewInput.value; });
 
+    const rec = (S.snap && S.snap.recordings) || {};
     setChildren($('#tab-voice'), [
       h('div', { class: 'card' },
-        h('h3', null, '声'),
+        h('h3', null, '声の種類'),
+        fieldRow('どの声で話すか', voiceSourceSelect(tts, rec), '録音は台詞ごとの音声ファイル。無い台詞は無音になります（設定で合成に代えることもできます）'),
+        recordingStatus(rec)),
+      h('div', { class: 'card' },
+        h('h3', null, '合成の声（VOICEVOX）'),
         h('div', { id: 'voice-select-box' }),
         h('div', { id: 'voice-credit', class: 'muted' })),
       h('div', { class: 'card' },
@@ -1319,9 +1369,12 @@
     renderVoiceSelect();
     renderStartCredit();
   }
-  /** 開始画面のクレジット表示用に、VOICEVOX が使えるようになったら一度だけ取得する。 */
+  /** 開始画面のクレジット表示用に、VOICEVOX が使えるようになったら一度だけ取得する。
+   *  録音の声で運用しているときは VOICEVOX を起動しないので取りに行かない。 */
   function maybeLoadVoices() {
     if (S.voicesRequested) return;
+    const tts = (S.snap && S.snap.settings && S.snap.settings.tts) || {};
+    if (tts.source === 'recorded') return;
     loadVoices(false).catch(() => {});
   }
 
@@ -1558,6 +1611,7 @@
     $('#btn-stop-float').addEventListener('click', doStop);
     $('#btn-pause').addEventListener('click', doPauseToggle);
     $('#btn-tracking').addEventListener('click', doTrackingToggle);
+    $('#in-child-name').addEventListener('input', renderNameRecordingHint);
     $('#btn-resume').addEventListener('click', resumeSession);
     $('#btn-discard').addEventListener('click', discardSession);
     $('#btn-end').addEventListener('click', doEndSession);
