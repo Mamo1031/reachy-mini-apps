@@ -43,7 +43,7 @@ class RobotSettings(Base):
 
 
 class NamesSettings(Base):
-    robot: str = "ドラちゃん"
+    robot: str = "ミミ"
     experimenter: str = "はるかお姉さん"
 
 
@@ -83,8 +83,19 @@ class DictEntry(Base):
     accent_type: int = 0
 
 
+class RecordedSettings(Base):
+    """録音した肉声を使うときの設定。dir は experiment/ からの相対パス。"""
+
+    dir: str = "recordings/ryu"
+    label: str = "りゅうさん（録音）"
+    fallback: Literal["silent", "voicevox"] = "silent"  # 録音が無い台詞をどうするか
+    trim_silence: bool = True
+
+
 class TTSSettings(Base):
-    backend: Literal["voicevox"] = "voicevox"  # バックエンドを追加したらここに足す
+    backend: Literal["voicevox"] = "voicevox"  # 合成エンジン(追加したらここに足す)
+    source: Literal["synth", "recorded"] = "synth"  # 声の出どころ: 合成 / 録音した肉声
+    recorded: RecordedSettings = Field(default_factory=RecordedSettings)
     voice_id: str = "1"  # VOICEVOX: ずんだもん あまあま
     params: VoiceParams = Field(default_factory=VoiceParams)
     voicevox: VoicevoxSettings = Field(default_factory=VoicevoxSettings)
