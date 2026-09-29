@@ -55,7 +55,7 @@ def test_start_log_and_snapshot(mgr, tmp_path):
 
     meta = json.loads(csv_path.with_suffix(".json").read_text(encoding="utf-8"))
     assert meta["child"] == "はなちゃん" and meta["condition"] == "empathy"
-    assert meta["settings"]["names"]["robot"] == "ドラちゃん"
+    assert meta["settings"]["names"]["robot"] == "ミミ"
     assert "phrases" in meta
 
     mgr.end()
