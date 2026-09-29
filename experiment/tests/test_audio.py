@@ -102,3 +102,83 @@ async def test_prewarm_progress_and_cache_files(store, tmp_path):
     assert seen == [(1, 3, "a"), (2, 3, "b"), (3, 3, "c")]
     assert len(list((tmp_path / "cache").glob("*.wav"))) == 3
     assert not list((tmp_path / "cache").glob("*.tmp"))
+
+
+# ---------------------------------------------------------------- 録音した肉声
+
+
+def _library(tmp_path, stems=("A1", "B3"), names=("ひとみちゃん",)):
+    from tests.test_recordings import tone, write_wav
+    from app.recordings import RecordingLibrary
+
+    base = tmp_path / "recordings" / "ryu"
+    for stem in stems:
+        write_wav(tone(0.4), path=base / f"{stem}.wav")
+    for nm in names:
+        write_wav(tone(0.6), path=base / "names" / f"{nm}.wav")
+    return RecordingLibrary(base, "りゅうさん（録音）")
+
+
+async def test_recorded_voice_is_used_and_uploaded_once(store, tmp_path, fake):
+    from app.audio import SpeechItem
+
+    s, tts, settings, _ = store
+    s.recordings = _library(tmp_path)
+    settings.tts.source = "recorded"
+    name, dur = await s.ensure_item(SpeechItem(key="B3", text="難しく感じることもあるよね"))
+    assert name and name in fake.sounds and 0.3 < dur < 0.7
+    assert tts.calls == []  # 合成は呼ばれない
+    assert (s.cache_dir / name).exists() and s.wanted[name] == "難しく感じることもあるよね"
+    again, _ = await s.ensure_item(SpeechItem(key="B3", text="難しく感じることもあるよね"))
+    assert again == name and len(fake.sounds) == 1  # 2 回目はアップロードしない
+    # 名前入りの台詞は names/ から探す
+    child, _ = await s.ensure_item(SpeechItem(key="names/ひとみちゃん", text="ひとみちゃんっていうんだね"))
+    assert child != name and child in fake.sounds
+    assert s.is_ready(SpeechItem(key="B3", text="難しく感じることもあるよね"))
+
+
+async def test_missing_recording_is_silent_or_synthesized(store, tmp_path):
+    from app.audio import SpeechItem
+
+    s, tts, settings, _ = store
+    s.recordings = _library(tmp_path)
+    settings.tts.source = "recorded"
+    item = SpeechItem(key="BC1", text="うん")
+    name, dur = await s.ensure_item(item)
+    assert name is None and dur == 0.0 and tts.calls == []  # 無音
+    assert s.is_ready(item)  # 用意するものが無いので「準備中」にしない
+    settings.tts.recorded.fallback = "voicevox"
+    name, dur = await s.ensure_item(item)
+    assert name and dur > 0 and tts.calls == [("うん", "1")]
+    # 合成に切り替えれば録音があっても合成を使う
+    settings.tts.source = "synth"
+    name2, _ = await s.ensure_item(SpeechItem(key="B3", text="難しく感じることもあるよね"))
+    assert name2 and ("難しく感じることもあるよね", "1") in tts.calls
+
+
+async def test_recorded_audio_is_restored_after_daemon_restart(store, tmp_path, fake):
+    from app.audio import SpeechItem
+
+    s, _, settings, _ = store
+    s.recordings = _library(tmp_path)
+    settings.tts.source = "recorded"
+    name, _ = await s.ensure_item(SpeechItem(key="A1", text="初めまして"))
+    fake.sounds.clear()  # ロボットが再起動して音声が消えた
+    (s.cache_dir / name).unlink()  # キャッシュも消えた
+    assert await s.reupload_missing() == 1
+    assert name in fake.sounds and (s.cache_dir / name).exists()  # 元の録音から作り直す
+
+
+async def test_recording_change_makes_a_new_file(store, tmp_path, fake):
+    from app.audio import SpeechItem
+    from tests.test_recordings import tone, write_wav
+
+    s, _, settings, _ = store
+    lib = _library(tmp_path)
+    s.recordings = lib
+    settings.tts.source = "recorded"
+    item = SpeechItem(key="A1", text="初めまして")
+    first, _ = await s.ensure_item(item)
+    write_wav(tone(0.9), path=lib.base / "A1.wav")  # 録り直し
+    second, dur = await s.ensure_item(item)
+    assert second != first and dur > 0.7 and second in fake.sounds
