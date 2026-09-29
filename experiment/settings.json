@@ -5,7 +5,7 @@
     "read_timeout_s": 3.0
   },
   "names": {
-    "robot": "ドラちゃん",
+    "robot": "ミミ",
     "experimenter": "はるかおねえさん"
   },
   "session": {
@@ -36,6 +36,13 @@
   },
   "tts": {
     "backend": "voicevox",
+    "source": "recorded",
+    "recorded": {
+      "dir": "recordings/ryu",
+      "label": "りゅうさん（録音）",
+      "fallback": "silent",
+      "trim_silence": true
+    },
     "voice_id": "3",
     "params": {
       "speed": 0.9,
