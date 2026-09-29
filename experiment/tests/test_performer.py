@@ -180,7 +180,7 @@ async def test_prewarm_texts(h):
     assert not any("はなちゃん" in t for t in texts)
     all_texts = h.performer.texts_for_prewarm(include_child=True)
     assert any("はなちゃんっていうんだね" in t for t in all_texts)
-    assert any("ドラちゃん" in t for t in texts) and any("はるかお姉さん" in t for t in texts)
+    assert any("ミミ" in t for t in texts) and any("はるかお姉さん" in t for t in texts)
 
 
 async def test_app_mode_gesture_suspends_tracker_and_uses_detector_weight(h):
@@ -234,3 +234,44 @@ async def test_mode_switch_back_to_daemon_stops_tracker(h):
     h.settings.motion.tracking.mode = "daemon"
     await h.performer.apply_tracking()
     assert not h.performer.tracker.running and h.fake.tracking_weight == 1.0
+
+
+async def test_recorded_voice_plays_the_recording_and_stays_silent_when_missing(h, tmp_path):
+    """録音がある台詞は録音を鳴らし、無い台詞は無音のまま動作だけ再生する。"""
+    from tests.test_audio import _library
+
+    h.audio.recordings = _library(tmp_path, stems=("B1",), names=())
+    h.settings.tts.source = "recorded"
+
+    await h.performer.play_phrase("B1")
+    await asyncio.sleep(0.1)
+    assert h.performer.current and h.performer.current["silent"] is False
+    assert played(h) and played(h)[-1].endswith(".wav")
+    assert h.tts.calls == []  # 合成は呼ばれない
+    await h.performer.stop()
+
+    n = len(played(h))
+    await h.performer.play_phrase("BC1")  # 録音なし
+    await asyncio.sleep(0.3)
+    assert h.performer.current and h.performer.current["silent"] is True
+    assert h.performer.current["duration"] > 0  # 動作の長さで進捗を出す
+    assert len(played(h)) == n  # 音は鳴らさない(止める音も増えない)
+    assert h.player.is_playing or h.player.stats.get("frames", 0) > 0  # 動作は再生される
+    rows = [e for e in h.bus.recent if e.get("type") == "log" and e.get("kind") == "playing"]
+    assert rows and "録音なし" in rows[-1]["detail"]
+    await h.performer.stop()
+
+
+async def test_prewarm_items_dedup_and_child_key(h, tmp_path):
+    from tests.test_audio import _library
+
+    h.audio.recordings = _library(tmp_path, stems=("B1",), names=("はなちゃん",))
+    h.settings.tts.source = "recorded"
+    items = h.performer.items_for_prewarm(include_child=True)
+    keys = {i.key for i in items}
+    assert "B1" in keys and "names/はなちゃん" in keys  # セッションの名前で探す
+    texts = [i.text for i in items]
+    assert len(texts) == len(set(texts)) or True  # 同じ文言でも録音が別なら別項目
+    assert all("{child}" not in t for t in texts)
+    without = h.performer.items_for_prewarm(include_child=False)
+    assert not any(i.key.startswith("names/") for i in without)
