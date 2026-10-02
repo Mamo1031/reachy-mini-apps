@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import asdict, dataclass
@@ -133,10 +134,9 @@ class PowerMonitor:
     async def stop(self) -> None:
         if self._task is not None:
             self._task.cancel()
-            try:
-                await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                async with asyncio.timeout(5.0):  # 終了処理を永久に待たせない
+                    await self._task
             self._task = None
 
     async def poll_once(self) -> PowerState:
