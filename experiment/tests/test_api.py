@@ -121,13 +121,13 @@ async def test_settings_change_applies_and_renames_robot(env):
     # 名前が変わったので裏で全音声を作り直す → 終わるのを待つ
     assert main.state.prewarm_task is not None
     await asyncio.wait_for(main.state.prewarm_task, timeout=20)
-    assert any(t.startswith("初めまして！ わたしはポチだよ") for t, _ in tts.calls)
+    assert any(t.startswith("初めまして。私はポチだよ") for t, _ in tts.calls)
     before = len(tts.calls)
     r = await c.post("/api/phrases/test", json={"id": "A1"})
     assert r.json()["accepted"]
     assert len(tts.calls) == before  # 作り直し済みなのでボタン時は合成しない
     st = (await c.get("/api/state")).json()
-    assert st["performer"]["current"]["text"].startswith("初めまして！ わたしはポチだよ")
+    assert st["performer"]["current"]["text"].startswith("初めまして。私はポチだよ")
 
 
 async def test_rest_and_wake(env):
