@@ -73,7 +73,7 @@ async def test_play_phrase_plays_sound_then_gesture_and_finishes(h):
     res = await h.performer.play_phrase("BC1")
     assert res["accepted"] and res["duration"] > 0
     assert h.performer.status == "playing" and h.performer.current["id"] == "BC1"
-    assert h.performer.current["text"] == "うん"
+    assert h.performer.current["text"] == "うん！"
     assert len(played(h)) == 1 and played(h)[0].endswith(".wav")
     # 音 → lead → 軌道の順(最初の set_target は音より後)
     await asyncio.sleep(0.5)  # 負荷が高いときでも最初のフレームが届く余裕を持つ
@@ -180,7 +180,7 @@ async def test_prewarm_texts(h):
     assert not any("はなちゃん" in t for t in texts)
     all_texts = h.performer.texts_for_prewarm(include_child=True)
     assert any("はなちゃんっていうんだね" in t for t in all_texts)
-    assert any("ミミ" in t for t in texts) and any("はるかお姉さん" in t for t in texts)
+    assert any("ミミ" in t for t in texts)  # 実験者の名前を呼ぶ台詞(A6-1)は廃止された
 
 
 async def test_app_mode_gesture_suspends_tracker_and_uses_detector_weight(h):
