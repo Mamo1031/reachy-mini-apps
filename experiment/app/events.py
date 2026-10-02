@@ -70,9 +70,11 @@ async def sse_stream(bus: EventBus, snapshot: dict[str, Any], heartbeat: Any, in
         yield sse_format({"type": "snapshot", "time": time.time(), **snapshot})
         while True:
             try:
-                ev = await asyncio.wait_for(q.get(), timeout=interval)
-                yield sse_format(ev)
-            except asyncio.TimeoutError:
+                async with asyncio.timeout(interval):
+                    ev = await q.get()
+            except TimeoutError:
                 yield sse_format({"type": "heartbeat", "time": time.time(), **heartbeat()})
+                continue
+            yield sse_format(ev)
     finally:
         bus.unsubscribe(q)
