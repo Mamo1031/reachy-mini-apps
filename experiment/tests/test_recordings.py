@@ -145,3 +145,18 @@ def test_real_recordings_are_usable():
     _, rate, samples = read_pcm(wav)
     head = samples[: int(0.1 * rate)]
     assert max(abs(x) for x in head) > 0.001  # 先頭の無音が詰められている
+
+
+def test_names_with_voiced_marks_match_typed_input(tmp_path):
+    """Finder は「だ」を分解形(NFD)で保存する。開始画面の入力(NFC)と照合できること。"""
+    import unicodedata
+
+    base = tmp_path / "ryu"
+    typed = "だいちくん"  # 合成形
+    on_disk = unicodedata.normalize("NFD", typed)
+    assert on_disk != typed
+    write_wav(tone(0.2), path=base / "names" / f"{on_disk}.wav")
+    lib = RecordingLibrary(base)
+    assert lib.find(f"names/{typed}") is not None  # 再生は OS が吸収する
+    assert typed in lib.names()  # 開始画面の「録音があります」判定
+    assert lib.report([], child=typed)["child_ready"] is True
