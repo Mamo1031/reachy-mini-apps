@@ -66,9 +66,9 @@ def test_start_log_and_snapshot(mgr, tmp_path):
 
 def test_starting_new_session_ends_previous(mgr):
     a = mgr.start("はな", "ちゃん", "robot_first", "empathy")
-    b = mgr.start("たろう", "くん", "experimenter_first", "logical")
+    b = mgr.start("たろう", "くん", "robot_first", "logical")
     assert mgr.current is b and b.log_stem != a.log_stem
-    assert mgr.snapshot()["intro_sequence"] == ["A1", "A2", "A6-1", "A6-2", "A6-3"]
+    assert mgr.snapshot()["intro_sequence"] == ["A1", "A2", "A3", "A4", "A5-1", "A5-2"]
 
 
 def test_row_without_session_only_publishes(mgr):
@@ -163,7 +163,7 @@ def test_discard_expiry_and_new_session_supersedes(tmp_path):
     csv3 = suspended_session("りく")
     m = _mgr(logs, bus, settings, phrases)
     assert m.load_pending()
-    m.start("そら", "くん", "experimenter_first", "logical")
+    m.start("そら", "くん", "robot_first", "logical")
     assert m.pending is None and m.current is not None and m.current.child_display == "そらくん"
     assert last_detail(csv3) == "end (superseded by a new session)"
     with pytest.raises(SessionError):
