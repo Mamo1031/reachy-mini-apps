@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import asdict, dataclass
@@ -25,6 +26,8 @@ from .events import EventBus
 from .robot import DaemonStatus, RobotClient, RobotError
 
 log = logging.getLogger(__name__)
+
+STOP_TIMEOUT_S = 5.0  # 停止時にタスクの終了を待つ上限。超えたら見捨てて先へ進む
 
 
 class ConnState(str, Enum):
@@ -117,13 +120,13 @@ class ConnectionMonitor:
             self._task = asyncio.create_task(self._run(), name="connection-monitor")
 
     async def stop(self) -> None:
+        """監視と復旧を止める。終了処理を永久に待たせないよう、待つ時間に上限を付ける。"""
         for t in (self._task, self._recovery_task):
             if t is not None:
                 t.cancel()
-                try:
-                    await t
-                except (asyncio.CancelledError, Exception):
-                    pass
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    async with asyncio.timeout(STOP_TIMEOUT_S):
+                        await t
         self._task = None
         self._recovery_task = None
 
@@ -139,9 +142,12 @@ class ConnectionMonitor:
                 raise
             except Exception:  # 監視ループ自体は決して死なない
                 log.exception("monitor tick failed")
+            # wait_for は 3.11 で「内側が完了した瞬間の外側キャンセル」を取りこぼすことがあり、
+            # 停止処理が永久に待たされる。asyncio.timeout はその競合を正しく扱う
             try:
-                await asyncio.wait_for(self.wakeup.wait(), timeout=self.interval)
-            except asyncio.TimeoutError:
+                async with asyncio.timeout(self.interval):
+                    await self.wakeup.wait()
+            except TimeoutError:
                 pass
             self.wakeup.clear()
 
