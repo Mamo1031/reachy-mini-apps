@@ -24,7 +24,6 @@
   const PF_ICON = { pending: '○', running: '◌', ok: '✓', fail: '✕' };
   const PHASE_LABEL = { intro: 'イントロ', baseline: 'ベースライン', main: '本番', ended: '終了' };
   const COND_LABEL = { empathy: '共感', logical: '論理' };
-  const ORDER_LABEL = { robot_first: 'ロボット先行', experimenter_first: '実験者先行' };
   const CONN_LABEL = { connected: '接続中', degraded: '不安定', disconnected: '切断', recovering: '復旧中' };
   const LOG_KIND = {
     button: 'ボタン', playing: '再生', done: '完了', interrupted: '中断', stop: '停止', pause: '一時停止',
@@ -544,11 +543,10 @@
     rc.hidden = !pend;
     if (pend) {
       const cond = pend.condition === 'empathy' ? '共感' : '論理';
-      const order = pend.order === 'robot_first' ? 'ロボット先行' : '実験者先行';
       const phaseLabel = { intro: 'イントロ', baseline: 'ベースライン', main: '本番', ended: '終了' }[pend.phase] || pend.phase;
       const rem = pend.main_remaining_s == null ? '' : `・本番 残り ${fmtMMSS(pend.main_remaining_s)}`;
       const ago = Math.max(0, Math.round((pend.age_s || 0) / 60));
-      $('#resume-desc').textContent = `${pend.child}・${cond}・${order}・${phaseLabel}${rem}（${ago} 分前に中断）`;
+      $('#resume-desc').textContent = `${pend.child}・${cond}・${phaseLabel}${rem}（${ago} 分前に中断）`;
       $('#btn-resume').disabled = S.busy.has('resume') || conn.state !== 'connected';
       $('#btn-discard').disabled = S.busy.has('resume');
     }
@@ -686,7 +684,7 @@
       $('#in-child-name').focus();
       return;
     }
-    const body = { child_name: name, suffix: segValue('seg-suffix'), order: segValue('seg-order'), condition: segValue('seg-condition') };
+    const body = { child_name: name, suffix: segValue('seg-suffix'), condition: segValue('seg-condition') };
     S.starting = true;
     renderStart();
     try {
@@ -786,7 +784,6 @@
     cond.textContent = COND_LABEL[sess.condition] || '';
     cond.classList.toggle('cond-empathy', sess.condition === 'empathy');
     cond.classList.toggle('cond-logical', sess.condition === 'logical');
-    $('#badge-order').textContent = ORDER_LABEL[sess.order] || '';
     const chip = $('#phase-chip');
     chip.textContent = sess.active ? (PHASE_LABEL[sess.phase] || sess.phase || '') : '';
     chip.dataset.phase = sess.phase || '';
@@ -901,7 +898,6 @@
     const sess = S.snap.session || { active: false };
     const bBase = $('#btn-phase-baseline');
     const bMain = $('#btn-phase-main');
-    bBase.hidden = sess.order !== 'robot_first';
     bBase.classList.toggle('active', sess.phase === 'baseline');
     bMain.classList.toggle('active', sess.phase === 'main');
     bBase.disabled = !sess.active || S.busy.has('phase');
@@ -1449,9 +1445,8 @@
   function buildScriptTab() {
     const P = S.draft.phrases;
     const introCards = (P.intro || []).map((step) => {
-      const scope = step.order && step.order.length ? `（${step.order.map((o) => ORDER_LABEL[o] || o).join('・')} のみ）` : '（両条件）';
       return h('div', { class: 'card' },
-        h('h3', null, `${step.id} ${step.label || ''} `, h('small', { class: 'muted' }, scope)),
+        h('h3', null, `${step.id} ${step.label || ''}`),
         fieldRow('見出し', bindText(step, 'label')),
         (step.parts && step.parts.length) ? step.parts.map((part) => phraseEditor(part, false)) : phraseEditor(step, false));
     });
