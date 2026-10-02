@@ -451,7 +451,8 @@ class Performer:
         if self._idle_task is not None:
             self._idle_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._idle_task
+                async with asyncio.timeout(5.0):  # 終了処理を永久に待たせない
+                    await self._idle_task
             self._idle_task = None
         await self.tracker.stop()
 
