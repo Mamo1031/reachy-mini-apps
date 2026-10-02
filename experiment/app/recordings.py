@@ -17,6 +17,7 @@ import math
 import shutil
 import struct
 import subprocess
+import unicodedata
 import wave
 from pathlib import Path
 from typing import Callable
@@ -179,16 +180,24 @@ class RecordingLibrary:
                 return p
         return None
 
+    @staticmethod
+    def _stems(d: Path) -> list[str]:
+        """フォルダ内の音声ファイル名(拡張子なし)。
+
+        macOS は濁点・半濁点を分解形(NFD)で保存するため、開始画面で入力した合成形(NFC)と
+        そのまま比べると一致しない。表示・照合用に NFC へそろえる(探索自体は OS が吸収する)。
+        """
+        if not d.is_dir():
+            return []
+        return sorted({unicodedata.normalize("NFC", p.stem) for p in d.glob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTS})
+
     def ids(self) -> list[str]:
         """録音がある台詞 ID。"""
-        return sorted({p.stem for p in self.base.glob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTS})
+        return self._stems(self.base)
 
     def names(self) -> list[str]:
         """録音がある名前(「ひとみちゃん」のような呼び方込みの表記)。"""
-        d = self.base / NAME_DIR
-        if not d.is_dir():
-            return []
-        return sorted({p.stem for p in d.glob("*") if p.is_file() and p.suffix.lower() in AUDIO_EXTS})
+        return self._stems(self.base / NAME_DIR)
 
     def cache_key(self, src: Path, *, loudness_db: float, trim: bool) -> str:
         """録音ファイルの中身と整形条件が変わったら別のキーになる。"""
