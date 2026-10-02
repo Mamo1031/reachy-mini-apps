@@ -160,3 +160,33 @@ async def test_face_event_published(robot, fake):
         assert seen
     finally:
         await mon.stop()
+
+
+async def test_monitor_stop_is_not_lost_when_poll_now_races_with_cancel():
+    """停止とほぼ同時に poll_now() が来ても、監視ループのキャンセルが取りこぼされず、stop() がすぐ返る。
+
+    Python 3.11 の asyncio.wait_for は「内側の待ちが完了した瞬間に外側がキャンセルされる」とキャンセルを
+    失うことがあり、shutdown が永久に待たされた(テストの後片付けで実際に起きた)。
+    """
+    import time as _time
+
+    from app.monitor import ConnectionMonitor
+
+    fake = FakeDaemon()
+    robot = RobotClient("http://fake", transport=httpx.ASGITransport(app=make_app(fake)))
+
+    async def recovery() -> None:
+        return None
+
+    try:
+        for _ in range(30):
+            mon = ConnectionMonitor(robot, EventBus(), recovery, interval=0.02, poll_timeout=0.3, recovery_backoff_s=0.0)
+            mon.start()
+            await asyncio.sleep(0.005)
+            mon.poll_now()  # wakeup.set() と cancel() を同じループ周期に詰め込む
+            t0 = _time.monotonic()
+            await asyncio.wait_for(mon.stop(), timeout=3.0)
+            assert _time.monotonic() - t0 < 2.0
+            assert mon._task is None
+    finally:
+        await robot.aclose()
