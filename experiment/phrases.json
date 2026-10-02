@@ -19,11 +19,9 @@
     {
       "id": "A3",
       "label": "課題への誘いかけ",
-      "text": "これから一緒にブロックのゲームをしよう！このピースを使って、お手本のお馬さんを作ってみてね。",
+      "text": "これから、一緒にブロックのゲームをしよう。このピースを使って、お手本のアイスクリームを作ってみてね。",
       "gesture": "point_sample",
-      "order": [
-        "robot_first"
-      ],
+      "order": [],
       "parts": []
     },
     {
@@ -31,9 +29,7 @@
       "label": "応援・ベースラインスタート",
       "text": "形をよく見ながら、順番に考えてみよう！応援しているからね！",
       "gesture": "nod_big_x2",
-      "order": [
-        "robot_first"
-      ],
+      "order": [],
       "parts": []
     },
     {
@@ -41,44 +37,16 @@
       "label": "本番スタート",
       "text": null,
       "gesture": null,
-      "order": [
-        "robot_first"
-      ],
+      "order": [],
       "parts": [
         {
           "id": "A5-1",
-          "text": "できたね、よくがんばったね。それでは次のお手本を見せるから、今度はこれをつくってみよう。大丈夫かな？",
+          "text": "おしまい、よく頑張ったね。次は、これを作ってみよう",
           "gesture": "happy_lean"
         },
         {
           "id": "A5-2",
-          "text": "それでははじめ！",
-          "gesture": "enthusiastic"
-        }
-      ]
-    },
-    {
-      "id": "A6",
-      "label": "本番スタート",
-      "text": null,
-      "gesture": null,
-      "order": [
-        "experimenter_first"
-      ],
-      "parts": [
-        {
-          "id": "A6-1",
-          "text": "さっきは{experimenter}とブロックで遊んだんだよね。今回は{robot}と一緒にあそびましょう。とっても楽しみ！",
-          "gesture": "welcoming"
-        },
-        {
-          "id": "A6-2",
-          "text": "それでは始めましょう。このお手本をブロックでつくってみよう。大丈夫かな？",
-          "gesture": "nod_gentle"
-        },
-        {
-          "id": "A6-3",
-          "text": "それでははじめ！",
+          "text": "それでは、スタート！",
           "gesture": "enthusiastic"
         }
       ]
@@ -174,7 +142,7 @@
     {
       "id": "C5",
       "trigger": "次のステップ",
-      "text": "次はどのピースを使うか考えてみよう。",
+      "text": "次はどのピースを使うか考えてみよう",
       "gesture": "antenna_pikopiko"
     },
     {
@@ -185,7 +153,7 @@
     },
     {
       "id": "C7",
-      "trigger": "色の比較促し",
+      "trigger": "お手本との確認促し",
       "text": "もう一度お手本を見て確かめてみよう",
       "gesture": "point_sample"
     },
@@ -212,7 +180,7 @@
     {
       "id": "BC1",
       "trigger": "",
-      "text": "うん",
+      "text": "うん！",
       "gesture": "nod_small"
     },
     {
@@ -230,8 +198,14 @@
     {
       "id": "BC4",
       "trigger": "",
-      "text": "できたね",
+      "text": "できたね！",
       "gesture": "happy_lean_short"
+    },
+    {
+      "id": "BC5",
+      "trigger": "手伝ってと言われたとき",
+      "text": "私は手伝えないから、自分で頑張ってみよう",
+      "gesture": "shake_gentle_antenna_up"
     }
   ]
 }
