@@ -267,7 +267,7 @@ async def test_corrupt_cached_wav_is_resynthesized(env):
     c, fake, tts = env
     await wait_preflight(c)
     await start_session(c)
-    text = main.state.performer.expand_text("うん")
+    text = main.state.performer.expand_text("うん！")
     p = main.state.audio.path(main.state.audio.key(text))
     p.write_bytes(b"garbage")  # セッション開始後にキャッシュが壊れた
     n = len(tts.calls)
