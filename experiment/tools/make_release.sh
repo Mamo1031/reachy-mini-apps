@@ -19,7 +19,7 @@ ZIP="$OUT/${NAME}-${STAMP}.zip"
 trap 'rm -rf "$(dirname "$STAGE")"' EXIT
 
 mkdir -p "$STAGE/experiment" "$OUT"
-cp "$ROOT/はじめる.command" "$ROOT/README.md" "$STAGE/"
+cp "$ROOT/はじめる.command" "$ROOT/README.md" "$ROOT/はじめに読んでください.txt" "$STAGE/"
 chmod +x "$STAGE/はじめる.command"
 
 # tools/ holds the 2 GB VOICEVOX engine and developer scripts; setup_voicevox.sh (kept, it sits
@@ -42,4 +42,5 @@ echo "  大きさ: $(du -h "$ZIP" | cut -f1)   録音: ${recordings} 本"
 echo
 echo "渡すときに伝えること:"
 echo "  1. zip を展開して、出てきたフォルダの「はじめる」をダブルクリック"
-echo "  2. 初回だけ警告が出るので、右クリック → 開く → 開く を選ぶ"
+echo "  2. 初回だけ macOS が止めるので、同梱の「はじめに読んでください.txt」の手順で 1 回だけ許可する"
+echo "     (macOS 15: システム設定 > プライバシーとセキュリティ > このまま開く / 14 以前: 右クリック > 開く)"
