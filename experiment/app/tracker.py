@@ -98,7 +98,8 @@ class FaceTracker:
         if task is not None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
+                async with asyncio.timeout(5.0):  # 終了処理を永久に待たせない
+                    await task
         self.state = "off"
         self._body_following = False
         self._set_detected(False)
