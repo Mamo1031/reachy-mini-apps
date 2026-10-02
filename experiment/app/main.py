@@ -508,7 +508,7 @@ async def post_preflight():
 class SessionStart(BaseModel):
     child_name: str
     suffix: str
-    order: str
+    order: str = "robot_first"  # 順序条件は廃止(常にロボット先行)。記録の互換のため値は残す
     condition: str
 
 
