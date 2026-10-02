@@ -25,7 +25,7 @@ MOVES_DIR = DATA_DIR / "moves"
 CACHE_DIR = DATA_DIR / "cache"
 LOGS_DIR = DATA_DIR / "logs"
 
-OrderCondition = Literal["robot_first", "experimenter_first"]
+OrderCondition = Literal["robot_first", "experimenter_first"]  # 2026-09-29 から常に robot_first(値は過去の記録との互換のため残す)
 EncouragementCondition = Literal["empathy", "logical"]
 
 
@@ -308,59 +308,49 @@ class Gestures(RootModel[dict[str, GestureDef]]):
 def default_phrases() -> Phrases:
     return Phrases(
         intro=[
-            IntroStep(id="A1", label="あいさつ＆自己紹介", text="初めまして！ わたしは{robot}だよ。あなたのお名前はなんていうの？", gesture="greet_wiggle"),
-            IntroStep(id="A2", label="名前への反応", text="{child}っていうんだね！ 素敵なお名前だね。今日はいっしょに遊べてとっても嬉しいな！", gesture="happy_lean_clap"),
-            IntroStep(id="A3", label="課題への誘いかけ", text="これから一緒にブロックのゲームをしよう！ このピースを使って、お手本のお馬さんを作ってみてね。", gesture="point_sample", order=["robot_first"]),
-            IntroStep(id="A4", label="応援・ベースラインスタート", text="形や色をよく見ながら、順番に考えてみよう！ わたし、応援しているからね！", gesture="nod_big_x2", order=["robot_first"]),
+            IntroStep(id="A1", label="あいさつ＆自己紹介", text="初めまして。私は{robot}だよ。君のお名前はなんていうの？", gesture="greet_wiggle"),
+            IntroStep(id="A2", label="名前への反応", text="{child}っていうんだね。素敵なお名前だね。今日は一緒に遊べてとっても嬉しいな", gesture="happy_lean_clap"),
+            IntroStep(id="A3", label="課題への誘いかけ", text="これから、一緒にブロックのゲームをしよう。このピースを使って、お手本のアイスクリームを作ってみてね。", gesture="point_sample"),
+            IntroStep(id="A4", label="応援・ベースラインスタート", text="形をよく見ながら、順番に考えてみよう！応援しているからね！", gesture="nod_big_x2"),
             IntroStep(
                 id="A5",
                 label="本番スタート",
-                order=["robot_first"],
                 parts=[
-                    PhrasePart(id="A5-1", text="できたね、よくがんばったね。それでは次のお手本を見せるから、今度はこれをつくってみよう。大丈夫かな？", gesture="happy_lean"),
-                    PhrasePart(id="A5-2", text="それでははじめ！", gesture="enthusiastic"),
-                ],
-            ),
-            IntroStep(
-                id="A6",
-                label="本番スタート",
-                order=["experimenter_first"],
-                parts=[
-                    PhrasePart(id="A6-1", text="さっきは{experimenter}とブロックで遊んだんだよね。今回は{robot}と一緒にあそびましょう。とっても楽しみ！", gesture="welcoming"),
-                    PhrasePart(id="A6-2", text="それでは始めましょう。このお手本をブロックでつくってみよう。大丈夫かな？", gesture="nod_gentle"),
-                    PhrasePart(id="A6-3", text="それでははじめ！", gesture="enthusiastic"),
+                    PhrasePart(id="A5-1", text="おしまい、よく頑張ったね。次は、これを作ってみよう", gesture="happy_lean"),
+                    PhrasePart(id="A5-2", text="それでは、スタート！", gesture="enthusiastic"),
                 ],
             ),
         ],
         empathy=[
-            Phrase(id="B1", trigger="課題開始直後", text="頑張っているね。応援してるよ！", gesture="lean_in_nod"),
+            Phrase(id="B1", trigger="課題開始直後", text="頑張っているね。応援しているよ！", gesture="lean_in_nod"),
             Phrase(id="B2", trigger="停滞時・悩み", text="考えているんだね。ゆっくりで大丈夫だよ。", gesture="calm_antennas"),
-            Phrase(id="B3", trigger="苦戦・足止め", text="難しく感じることもあるよね。", gesture="head_lower"),
-            Phrase(id="B4", trigger="失敗時・崩れた時", text="うまくいかなくて悔しいよね。", gesture="tilt_sympathy"),
+            Phrase(id="B3", trigger="苦戦・足止め", text="難しく感じることもあるよね", gesture="head_lower"),
+            Phrase(id="B4", trigger="失敗時・崩れた時", text="うまくいかなくて悔しいよね", gesture="tilt_sympathy"),
             Phrase(id="B5", trigger="諦めそうな時・おこり始めたら", text="そういう気持ちになるよね。", gesture="nod_slow_deep"),
             Phrase(id="B6", trigger="課題進行時", text="だいぶできたね！いい感じに進んでいるね。", gesture="banzai_small"),
             Phrase(id="B7", trigger="試行錯誤時", text="大丈夫だよ。一緒に続けてみよう。", gesture="beckon"),
-            Phrase(id="B8", trigger="失敗後の再挑戦時", text="もう一回やってみようと思ったんだね、すごいね！", gesture="antenna_clap"),
+            Phrase(id="B8", trigger="失敗後の再挑戦時", text="もう一回やってみようと思ったんだね。すごいね！", gesture="antenna_clap"),
             Phrase(id="B9", trigger="手が止まり不安そうな時", text="焦らなくて大丈夫。自分のペースでやってみようね。", gesture="shake_gentle_antenna_up"),
             Phrase(id="B10", trigger="集中している時", text="一生懸命取り組んでいて、とってもかっこいいよ！", gesture="lean_in_hold"),
         ],
         logical=[
-            Phrase(id="C1", trigger="課題開始直後・確認", text="お手本をよく見てみよう。", gesture="point_sample"),
-            Phrase(id="C2", trigger="組み立て順序指示", text="下から順番に作ってみよう。", gesture="sweep_bottom_to_top"),
-            Phrase(id="C3", trigger="視点変更", text="後ろからの写真も見てみよう。", gesture="point_photo"),
+            Phrase(id="C1", trigger="課題開始直後・確認", text="お手本をよくみてみよう", gesture="point_sample"),
+            Phrase(id="C2", trigger="組み立て順序指示", text="下から順番に作ってみよう", gesture="sweep_bottom_to_top"),
+            Phrase(id="C3", trigger="視点変更", text="後ろからの写真を見たら、わかりやすいかもしれないよ", gesture="point_photo"),
             Phrase(id="C4", trigger="形状の比較促し", text="形は見本と一緒かな？", gesture="head_tilt"),
-            Phrase(id="C5", trigger="次のステップ", text="次はどのピースを使うか考えてみよう。", gesture="antenna_pikopiko"),
-            Phrase(id="C6", trigger="部分完成・進行時", text="できてきたね。このまま上の部分も作ってみよう！", gesture="look_up_nod"),
-            Phrase(id="C7", trigger="色の比較促し", text="色が一緒か、もう一度お手本を見て確かめてみよう。", gesture="point_sample"),
-            Phrase(id="C8", trigger="ピースの向き確認", text="ピースの向きを変えてみると、うまくはまるかも知れないよ。", gesture="roll_twist"),
-            Phrase(id="C9", trigger="崩れた・失敗時", text="どこが違っていたか、もう一度見本と比べてみよう。", gesture="point_sample"),
-            Phrase(id="C10", trigger="残り時間の意識促し", text="組み立て方の順番を、頭の中で整理してみよう。", gesture="thoughtful"),
+            Phrase(id="C5", trigger="次のステップ", text="次はどのピースを使うか考えてみよう", gesture="antenna_pikopiko"),
+            Phrase(id="C6", trigger="部分完成・進行時", text="いい調子だね。このまま上の部分も作ってみよう！", gesture="look_up_nod"),
+            Phrase(id="C7", trigger="お手本との確認促し", text="もう一度お手本を見て確かめてみよう", gesture="point_sample"),
+            Phrase(id="C8", trigger="ピースの向き確認", text="ピースの向きを変えると、うまくいくかもしれないよ。", gesture="roll_twist"),
+            Phrase(id="C9", trigger="崩れた・失敗時", text="もう一度やってみよう！下から作ると倒れにくくなるよ。", gesture="point_sample"),
+            Phrase(id="C10", trigger="残り時間の意識促し", text="組み立て方の順番を頭の中で整理してみよう", gesture="thoughtful"),
         ],
         backchannel=[
-            Phrase(id="BC1", text="うん", gesture="nod_small"),
+            Phrase(id="BC1", text="うん！", gesture="nod_small"),
             Phrase(id="BC2", text="ちがうよ", gesture="shake_small"),
             Phrase(id="BC3", text="そうだね", gesture="nod_small"),
-            Phrase(id="BC4", text="できたね", gesture="happy_lean_short"),
+            Phrase(id="BC4", text="できたね！", gesture="happy_lean_short"),
+            Phrase(id="BC5", trigger="手伝ってと言われたとき", text="私は手伝えないから、自分で頑張ってみよう", gesture="shake_gentle_antenna_up"),
         ],
     )
 
@@ -498,7 +488,6 @@ def validate_phrases(ph: Phrases, gesture_names: set[str]) -> list[str]:
             errors.append(f"{k}: 本文が空です")
         if v.gesture not in gesture_names:
             errors.append(f"{k}: ジェスチャー '{v.gesture}' がありません")
-    for order in ("robot_first", "experimenter_first"):
-        if not ph.intro_sequence(order):
-            errors.append(f"順序条件 {order} のイントロがありません")
+    if not ph.intro_sequence("robot_first"):
+        errors.append("イントロがありません")
     return errors
