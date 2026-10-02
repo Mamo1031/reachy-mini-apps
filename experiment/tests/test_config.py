@@ -22,12 +22,14 @@ def test_expand_placeholders():
 def test_default_phrases_leaves_and_sequences():
     ph = default_phrases()
     leaves = ph.leaves()
-    assert set(leaves) >= {"A1", "A2", "A3", "A4", "A5-1", "A5-2", "A6-1", "A6-2", "A6-3"}
+    assert set(leaves) >= {"A1", "A2", "A3", "A4", "A5-1", "A5-2"}
+    assert "A6-1" not in leaves  # 実験者先行のイントロは廃止(常にロボット先行)
     assert [k for k in leaves if leaves[k].category == "empathy"] == [f"B{i}" for i in range(1, 11)]
     assert [k for k in leaves if leaves[k].category == "logical"] == [f"C{i}" for i in range(1, 11)]
-    assert [leaves[k].text for k in ("BC1", "BC2", "BC3", "BC4")] == ["うん", "ちがうよ", "そうだね", "できたね"]
+    assert [leaves[k].text for k in ("BC1", "BC2", "BC3", "BC4")] == ["うん！", "ちがうよ", "そうだね", "できたね！"]
+    assert leaves["BC5"].text.startswith("私は手伝えないから")  # 「手伝って」と言われたとき用
     assert ph.intro_sequence("robot_first") == ["A1", "A2", "A3", "A4", "A5-1", "A5-2"]
-    assert ph.intro_sequence("experimenter_first") == ["A1", "A2", "A6-1", "A6-2", "A6-3"]
+    assert ph.intro_sequence("experimenter_first") == ph.intro_sequence("robot_first")  # 順序で分岐しない
     # 名前は A2 だけで使う
     assert [k for k, v in leaves.items() if "{child}" in v.text] == ["A2"]
 
