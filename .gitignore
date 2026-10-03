@@ -11,5 +11,6 @@ reference/
 
 # 録音した肉声(個人データ)。公開リポジトリに入れない
 experiment/recordings/
+録音/
 dist/
 .claude/
