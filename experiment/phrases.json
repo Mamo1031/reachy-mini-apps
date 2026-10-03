@@ -206,6 +206,24 @@
       "trigger": "手伝ってと言われたとき",
       "text": "私は手伝えないから、自分で頑張ってみよう",
       "gesture": "shake_gentle_antenna_up"
+    },
+    {
+      "id": "BC6",
+      "trigger": "名前を呼ぶ",
+      "text": "{child}！",
+      "gesture": "lean_in_nod"
+    },
+    {
+      "id": "BC7",
+      "trigger": "",
+      "text": "すごいね",
+      "gesture": "antenna_clap"
+    },
+    {
+      "id": "BC8",
+      "trigger": "",
+      "text": "その調子！",
+      "gesture": "nod_big_x2"
     }
   ]
 }
