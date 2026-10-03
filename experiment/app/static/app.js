@@ -33,6 +33,7 @@
     'settings_changed', 'resting', 'volume', 'heartbeat', 'recovery', 'error'];
   const HIRAGANA_RE = /^[ぁ-ゖー]+$/;
   const SSE_TIMEOUT_MS = 8000;   // これ以上メッセージが無ければ SSE を張り直す（ハートビートは 3 秒毎）
+  const NAME_CHECK_MS = 3000;    // 開始画面: 名前の録音の有無をこの間隔で聞き直す（置いた直後に表示が変わる）
   const MAX_LOG = 100;
   const MAX_TOAST = 4;
   const TABS = ['general', 'positions', 'voice', 'script', 'motion'];
@@ -58,6 +59,7 @@
     buttonsKey: '',        // 再生ボタン群の構造キー（変化時のみ DOM を作り直す）
     voices: null,          // null=未取得 | 'error' | [{id,name,credit}]
     voicesRequested: false,
+    nameCheck: null,       // 開始画面: 入力中の名前の録音の有無 {name, at, pending, result}
     draft: null,           // 設定画面の編集中データ {settings, phrases}
     gesturesText: null,    // ジェスチャー JSON テキスト
     previewText: null,
@@ -616,7 +618,9 @@
     renderStartCredit();
   }
 
-  /** 録音の声を使うとき、入力された名前の録音があるかを開始画面に出す。 */
+  /** 録音の声を使うとき、入力された名前の録音があるかを開始画面に出す。
+   *  snapshot の一覧はページを開いた時点のものなので使わず、サーバーにその場で探してもらう（再生と同じ判定）。
+   *  名前入りの台詞は「文（A2）」と「名前だけ（相づち）」で置き場所が違うので、種類ごとに あり / なし を出す。 */
   function renderNameRecordingHint() {
     const box = $('#name-recording-hint');
     if (!box) return;
@@ -624,13 +628,65 @@
     const name = ($('#in-child-name').value || '').trim();
     if (rec.source !== 'recorded' || !rec.available || !name || !HIRAGANA_RE.test(name)) {
       box.hidden = true;
+      S.nameCheck = null;
       return;
     }
     const full = name + segValue('seg-suffix');
-    const ok = (rec.names || []).includes(full);
+    const chk = S.nameCheck;
+    if (!chk || chk.name !== full || (!chk.pending && Date.now() - chk.at > NAME_CHECK_MS)) scheduleNameCheck(full);
+    const res = chk && chk.name === full ? chk.result : null;
+    const kinds = res && Array.isArray(res.kinds) ? res.kinds : null;
+    // 名前や呼び方を変えた直後は結果待ち。箱を消すと下のボタンが動いて押し間違いの元になるので、文言だけ差し替える
+    if (!kinds) {
+      showNameHint(box, 'field-note', `「${full}」の録音を確認中…`);
+      return;
+    }
+    if (!kinds.length) {  // 名前入りの台詞が無い
+      box.hidden = true;
+      return;
+    }
+    const leaves = (S.snap && S.snap.leaves) || {};
+    const desc = (k) => (k.ids || []).map((id) => (leaves[id] && leaves[id].label ? `${id}（${leaves[id].label}）` : id)).join('・');
+    const missing = kinds.filter((k) => !k.ready);
+    if (!missing.length) {
+      showNameHint(box, 'field-note ok', `「${full}」の録音を使います: ${kinds.map(desc).join(' ／ ')}`);
+      return;
+    }
+    const status = kinds.map((k) => `${desc(k)}: ${k.ready ? 'あり' : 'なし → 無音になります'}`).join(' ／ ');
+    const where = missing.map((k) => `${rec.dir || ''}/${k.folder}/${full}.m4a`);
+    showNameHint(box, 'field-note warn', `「${full}」の録音 — ${status}`, `置き場所: ${where.join(' 、 ')}（置けば再起動なしで使えます）`);
+  }
+
+  /** ヒントの DOM は内容が変わったときだけ触る(毎秒作り直すと、置き場所のパスを選択・コピーできない)。 */
+  function showNameHint(box, cls, text, sub) {
+    const key = `${cls}|${text}|${sub || ''}`;
     box.hidden = false;
-    box.className = ok ? 'field-note ok' : 'field-note warn';
-    box.textContent = ok ? `「${full}」の録音を使います` : `「${full}」の録音がありません（名前を呼ぶ台詞は無音になります）`;
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    box.className = cls;
+    setChildren(box, sub ? [h('div', null, text), h('div', { class: 'field-note-sub' }, sub)] : text);
+  }
+
+  let nameCheckTimer = null;
+  // 描画は SSE のハートビート(3 秒)に乗るだけなので、置いた直後に気づけるよう 1 秒ごとに見直す(聞き直す間隔は NAME_CHECK_MS)
+  setInterval(() => { try { if (S.snap && S.screen === 'start') renderNameRecordingHint(); } catch (e) { console.error(e); } }, 1000);
+  function scheduleNameCheck(full) {
+    if (S.nameCheck && S.nameCheck.name === full && S.nameCheck.pending) return;
+    clearTimeout(nameCheckTimer);
+    nameCheckTimer = setTimeout(() => { runNameCheck(full).catch((e) => console.warn('name check failed', e)); }, 250);
+  }
+  async function runNameCheck(full) {
+    const prev = S.nameCheck && S.nameCheck.name === full ? S.nameCheck.result : null;
+    S.nameCheck = { name: full, at: Date.now(), pending: true, result: prev };
+    try {
+      const r = await api(`/api/recordings/child?name=${encodeURIComponent(full)}`, undefined, { timeoutMs: 4000 });
+      if (S.nameCheck && S.nameCheck.name === full) S.nameCheck = { name: full, at: Date.now(), pending: false, result: r };
+    } catch (e) {
+      if (S.nameCheck && S.nameCheck.name === full) S.nameCheck.pending = false;  // 次の描画で聞き直す
+      throw e;
+    } finally {
+      if (S.screen === 'start') renderNameRecordingHint();
+    }
   }
 
   function renderStartCredit() {
@@ -1051,6 +1107,11 @@
     buildSettingsForms();
     loadVoices(false);
     loadGestures();
+    // 録音の一覧(声タブ)はページを開いた時点の snapshot なので、あとから置いたファイルが映るよう取り直す
+    refreshState().then(() => {
+      const el = $('#recording-status');
+      if (el && S.screen === 'settings' && S.snap) setChildren(el, recordingStatus(S.snap.recordings));
+    }).catch(() => {});
   }
   function leaveSettings() {
     showScreen(sessionActive() ? 'control' : 'start');
@@ -1162,12 +1223,14 @@
     const have = (rec.ids || []).length;
     const missing = rec.missing || [];
     const names = rec.names || [];
+    const namesOnly = rec.names_only || [];
     return h('div', null,
       h('p', { class: 'muted' }, `録音のある台詞: ${have} 本（${rec.dir || ''}）`),
       missing.length
         ? h('p', { class: 'warn-text' }, `録音が無い台詞（無音になります）: ${missing.join('、')}`)
         : h('p', { class: 'muted' }, 'すべての台詞に録音があります。'),
-      h('p', { class: 'muted' }, names.length ? `名前入りの録音: ${names.join('、')}` : '名前入りの録音はまだありません。'));
+      h('p', { class: 'muted' }, names.length ? `名前を含む文の録音（names/）: ${names.join('、')}` : '名前を含む文の録音（names/）はまだありません。'),
+      h('p', { class: 'muted' }, namesOnly.length ? `名前だけの録音（names_only/）: ${namesOnly.join('、')}` : '名前だけの録音（names_only/）はまだありません。'));
   }
   function trackingModeSelect(tr) {
     const sel = h('select', null, [
@@ -1279,7 +1342,7 @@
       h('div', { class: 'card' },
         h('h3', null, '声の種類'),
         fieldRow('どの声で話すか', voiceSourceSelect(tts, rec), '録音は台詞ごとの音声ファイル。無い台詞は無音になります（設定で合成に代えることもできます）'),
-        recordingStatus(rec)),
+        h('div', { id: 'recording-status' }, recordingStatus(rec))),
       h('div', { class: 'card' },
         h('h3', null, '合成の声（VOICEVOX）'),
         h('div', { id: 'voice-select-box' }),
@@ -1601,6 +1664,7 @@
         for (const x of seg.querySelectorAll('button')) x.classList.toggle('active', x === b);
       });
     }
+    $('#seg-suffix').addEventListener('click', () => renderNameRecordingHint());  // 呼び方を変えたら名前の録音を見直す
     // 操作画面
     $('#btn-stop').addEventListener('click', doStop);
     $('#btn-stop-float').addEventListener('click', doStop);
