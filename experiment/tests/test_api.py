@@ -267,6 +267,45 @@ async def test_state_reports_recording_coverage(env):
     assert "BC1" in rec["missing"] or "BC1" in rec["ids"]
 
 
+async def test_child_recording_check_sees_files_added_after_the_page_loaded(env, tmp_path):
+    """開始画面の「名前の録音があるか」は、その場でファイルを探す(再生と同じ判定)。
+
+    snapshot の一覧はページを開いた時点のものなので、あとから `names/` に置いた録音が映らず、
+    「録音がありません」のまま再生だけはされる、という食い違いが起きていた。
+    """
+    from tests.test_recordings import tone, write_wav
+
+    c, _, _ = env
+    s = (await c.get("/api/settings")).json()
+    s["tts"]["source"] = "recorded"
+    assert (await c.put("/api/settings", json=s)).status_code == 200
+    rec = (await c.get("/api/state")).json()["recordings"]
+    assert rec["names"] == [] and rec["names_only"] == []
+
+    async def check(name):
+        r = await c.get("/api/recordings/child", params={"name": name})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    r = await check("てすとくん")
+    assert r["source"] == "recorded" and r["available"] is True and r["name"] == "てすとくん"
+    assert {k["folder"]: (k["ids"], k["ready"]) for k in r["kinds"]} == {"names": (["A2"], False), "names_only": (["BC6"], False)}
+    # snapshot を取り直さずにファイルを置く(実験者が展開済みフォルダに足す操作)
+    base = tmp_path / "recordings" / "ryu"
+    write_wav(tone(0.2), path=base / "names" / "てすとくん.wav")
+    assert {k["folder"]: k["ready"] for k in (await check("てすとくん"))["kinds"]} == {"names": True, "names_only": False}
+    write_wav(tone(0.2), path=base / "names_only" / "てすとくん.wav")
+    r = await check(" てすとくん ")  # 前後の空白は無視、名前はそのまま返す
+    assert r["name"] == "てすとくん" and all(k["ready"] for k in r["kinds"])
+    assert (await check(""))["kinds"] == []
+    write_wav(tone(0.2), path=tmp_path / "secret.wav")  # 録音フォルダの外にあるファイル
+    for evil in ("../../../secret", str(tmp_path / "secret")):
+        assert not any(k["ready"] for k in (await check(evil))["kinds"]), evil  # フォルダを抜け出さない
+    # 一覧(設定画面)も次に取れば新しいファイルを含む
+    rec = (await c.get("/api/state")).json()["recordings"]
+    assert rec["names"] == ["てすとくん"] and rec["names_only"] == ["てすとくん"]
+
+
 async def test_rest_and_wake_work_without_a_session(env):
     """セッション終了後(開始画面)でもロボットを休ませられる。休止中は起こすまで開始できない。"""
     c, fake, _ = env
