@@ -1,6 +1,8 @@
 """録音した肉声を台詞に対応づけ、ロボットで鳴らせる WAV に整える。
 
-- 探索: `recordings/<声>/<台詞 ID>.<拡張子>`。名前入りの台詞だけは `recordings/<声>/names/<なまえ+呼び方>.<拡張子>`。
+- 探索: `recordings/<声>/<台詞 ID>.<拡張子>`。名前入りの台詞は名前で探す(`name_key()`):
+  `names/<なまえ+呼び方>` = 名前を含む文(A2「〇〇ちゃんっていうんだね…」)、
+  `names_only/<なまえ+呼び方>` = 名前だけ(相づち「〇〇ちゃん！」)。
 - 変換: m4a などは macOS 標準の afconvert(無ければ ffmpeg)で 24 kHz モノラルの PCM にする。
 - 整形: 前後の無音を詰めて(押してすぐ声が出るように)、音量を揃える(loudness と同じ処理)。
 
@@ -27,7 +29,9 @@ from .loudness import process_samples
 log = logging.getLogger(__name__)
 
 AUDIO_EXTS = (".wav", ".m4a", ".mp3", ".aac", ".flac", ".ogg", ".opus")
-NAME_DIR = "names"
+NAME_DIR = "names"  # 名前を含む文の録音(A2)
+NAME_ONLY_DIR = "names_only"  # 名前だけの録音(相づち)
+NAME_DIRS = (NAME_DIR, NAME_ONLY_DIR)
 TARGET_RATE = 24000
 TRIM_FLOOR_DB = -30.0  # いちばん大きい区間からこれだけ下を無音とみなす
 TRIM_WINDOW_S = 0.02
@@ -37,6 +41,26 @@ TAIL_PAD_S = 0.15
 
 class RecordingError(Exception):
     pass
+
+
+def name_folder(template: str) -> str:
+    """名前入りの台詞(展開前の文面)が使う録音フォルダ。名前だけなら names_only、文なら names。
+
+    「名前だけ」= {child} を除くと句読点・記号・空白(長音「ー」を含む)しか残らない台詞。
+    「{child}！」「{child}〜」「「{child}」」はどれも名前だけ。正規表現にすると記号の列挙漏れで
+    文の側に落ち、A2 の録音が鳴ってしまうので、文字種(Unicode カテゴリ)で判定する。
+    """
+    if "{child}" not in template:
+        return NAME_DIR
+    rest = template.replace("{child}", "")
+    if all(c == "ー" or unicodedata.category(c)[0] in "PSZC" for c in rest):
+        return NAME_ONLY_DIR
+    return NAME_DIR
+
+
+def name_key(template: str, child: str) -> str:
+    """名前入りの台詞の録音を探す鍵("names/ひとみちゃん" / "names_only/ひとみちゃん")。"""
+    return f"{name_folder(template)}/{child}"
 
 
 def _find_decoder() -> list[str] | None:
@@ -164,12 +188,12 @@ class RecordingLibrary:
         self.label = label
 
     def find(self, key: str) -> Path | None:
-        """key は台詞 ID("B3")か、名前入りの台詞("names/ひとみちゃん")。"""
+        """key は台詞 ID("B3")か、名前入りの台詞("names/ひとみちゃん"、"names_only/ひとみちゃん")。"""
         if "/" in key:
             folder, stem = key.split("/", 1)
-            if folder != NAME_DIR:
+            if folder not in NAME_DIRS:
                 return None
-            d = self.base / NAME_DIR
+            d = self.base / folder
         else:
             d, stem = self.base, key
         if not stem or "/" in stem or stem in (".", ".."):
@@ -196,8 +220,12 @@ class RecordingLibrary:
         return self._stems(self.base)
 
     def names(self) -> list[str]:
-        """録音がある名前(「ひとみちゃん」のような呼び方込みの表記)。"""
+        """名前を含む文の録音がある名前(「ひとみちゃん」のような呼び方込みの表記)。"""
         return self._stems(self.base / NAME_DIR)
+
+    def names_only(self) -> list[str]:
+        """名前だけの録音がある名前。"""
+        return self._stems(self.base / NAME_ONLY_DIR)
 
     def cache_key(self, src: Path, *, loudness_db: float, trim: bool) -> str:
         """録音ファイルの中身と整形条件が変わったら別のキーになる。"""
@@ -218,9 +246,11 @@ class RecordingLibrary:
             "ids": sorted(have),
             "missing": missing,
             "names": self.names(),
+            "names_only": self.names_only(),
         }
         if child is not None:
             out["child_ready"] = self.find(f"{NAME_DIR}/{child}") is not None
+            out["child_name_only_ready"] = self.find(f"{NAME_ONLY_DIR}/{child}") is not None
         return out
 
 
