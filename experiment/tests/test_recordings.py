@@ -11,6 +11,8 @@ from app.recordings import (
     RecordingLibrary,
     duration_of,
     levels,
+    name_folder,
+    name_key,
     prepare,
     read_pcm,
     trim_silence,
@@ -105,16 +107,39 @@ def test_library_find_ids_names_and_traversal(tmp_path):
     for stem in ("A1", "B3"):
         write_wav(tone(0.2), path=base / f"{stem}.wav")
     write_wav(tone(0.2), path=base / "names" / "ひとみちゃん.wav")
+    write_wav(tone(0.2), path=base / "names_only" / "たろうくん.wav")  # 名前だけの録音(相づち用)
     write_wav(tone(0.2), path=tmp_path / "secret.wav")
     lib = RecordingLibrary(base, "りゅうさん")
     assert lib.find("A1") == base / "A1.wav"
     assert lib.find("names/ひとみちゃん") == base / "names" / "ひとみちゃん.wav"
+    assert lib.find("names_only/たろうくん") == base / "names_only" / "たろうくん.wav"
+    assert lib.find("names/たろうくん") is None and lib.find("names_only/ひとみちゃん") is None  # 種類は混ぜない
     assert lib.find("BC1") is None
     assert lib.find("../secret") is None and lib.find("other/x") is None and lib.find("") is None
-    assert lib.ids() == ["A1", "B3"] and lib.names() == ["ひとみちゃん"]
+    assert lib.find("names/../../secret") is None and lib.find("names_only/../../secret") is None  # base の外(tmp_path/secret.wav)に届かない
+    assert lib.find(f"names/{tmp_path / 'secret'}") is None  # 絶対パスで base を捨てさせない
+    assert lib.ids() == ["A1", "B3"] and lib.names() == ["ひとみちゃん"] and lib.names_only() == ["たろうくん"]
     rep = lib.report(["A1", "B3", "BC1", "C5"], child="ひとみちゃん")
     assert rep["missing"] == ["BC1", "C5"] and rep["child_ready"] is True and rep["label"] == "りゅうさん"
-    assert lib.report(["A1"], child="たろうくん")["child_ready"] is False
+    assert rep["names_only"] == ["たろうくん"] and rep["child_name_only_ready"] is False
+    rep = lib.report(["A1"], child="たろうくん")
+    assert rep["child_ready"] is False and rep["child_name_only_ready"] is True
+    assert "child_ready" not in lib.report(["A1"])
+
+
+def test_name_folder_depends_on_whether_the_line_is_only_the_name():
+    """名前だけの台詞(句読点・感嘆符を除いて {child} のみ)は names_only、文は names から探す。"""
+    assert name_folder("{child}") == "names_only"
+    assert name_folder("{child}！") == "names_only"
+    assert name_folder(" {child}、{child}！ ") == "names_only"
+    for t in ("{child}…", "{child}〜！", "{child}～", "{child}♪", "「{child}」", "{child}ー！", "{child}.", "{child}\u200b"):
+        assert name_folder(t) == "names_only", t  # 設定画面で記号を足しても A2 の文の録音に化けない
+    assert name_folder("{child}{robot}") == "names" and name_folder("{child}すごい") == "names"
+    assert name_folder("{child}っていうんだね。素敵なお名前だね") == "names"
+    assert name_folder("{child}、がんばれ") == "names"
+    assert name_folder("うん！") == "names"  # 名前を含まない台詞は呼ばれない想定だが、文側に寄せる
+    assert name_key("{child}！", "ぜんくん") == "names_only/ぜんくん"
+    assert name_key("{child}っていうんだね", "ぜんくん") == "names/ぜんくん"
 
 
 def test_cache_key_tracks_file_and_settings(tmp_path):
@@ -156,7 +181,10 @@ def test_names_with_voiced_marks_match_typed_input(tmp_path):
     on_disk = unicodedata.normalize("NFD", typed)
     assert on_disk != typed
     write_wav(tone(0.2), path=base / "names" / f"{on_disk}.wav")
+    write_wav(tone(0.2), path=base / "names_only" / f"{on_disk}.wav")
     lib = RecordingLibrary(base)
     assert lib.find(f"names/{typed}") is not None  # 再生は OS が吸収する
-    assert typed in lib.names()  # 開始画面の「録音があります」判定
-    assert lib.report([], child=typed)["child_ready"] is True
+    assert lib.find(f"names_only/{typed}") is not None
+    assert typed in lib.names() and typed in lib.names_only()  # 設定画面の一覧(NFC で表示)
+    rep = lib.report([], child=typed)
+    assert rep["child_ready"] is True and rep["child_name_only_ready"] is True
