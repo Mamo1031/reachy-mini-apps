@@ -107,7 +107,7 @@ async def test_prewarm_progress_and_cache_files(store, tmp_path):
 # ---------------------------------------------------------------- 録音した肉声
 
 
-def _library(tmp_path, stems=("A1", "B3"), names=("ひとみちゃん",)):
+def _library(tmp_path, stems=("A1", "B3"), names=("ひとみちゃん",), names_only=()):
     from tests.test_recordings import tone, write_wav
     from app.recordings import RecordingLibrary
 
@@ -116,6 +116,8 @@ def _library(tmp_path, stems=("A1", "B3"), names=("ひとみちゃん",)):
         write_wav(tone(0.4), path=base / f"{stem}.wav")
     for nm in names:
         write_wav(tone(0.6), path=base / "names" / f"{nm}.wav")
+    for nm in names_only:
+        write_wav(tone(0.3), path=base / "names_only" / f"{nm}.wav")
     return RecordingLibrary(base, "りゅうさん（録音）")
 
 
@@ -135,6 +137,12 @@ async def test_recorded_voice_is_used_and_uploaded_once(store, tmp_path, fake):
     child, _ = await s.ensure_item(SpeechItem(key="names/ひとみちゃん", text="ひとみちゃんっていうんだね"))
     assert child != name and child in fake.sounds
     assert s.is_ready(SpeechItem(key="B3", text="難しく感じることもあるよね"))
+    # 名前だけの録音(names_only/)は別ファイル。無ければ名前の文(names/)で代用せず無音
+    only = SpeechItem(key="names_only/ひとみちゃん", text="ひとみちゃん！")
+    assert (await s.ensure_item(only)) == (None, 0.0) and tts.calls == []
+    s.recordings = _library(tmp_path, names_only=("ひとみちゃん",))
+    call, dur = await s.ensure_item(only)
+    assert call not in (None, child) and call in fake.sounds and 0.2 < dur < 0.4
 
 
 async def test_missing_recording_is_silent_or_synthesized(store, tmp_path):
