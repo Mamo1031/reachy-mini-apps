@@ -351,6 +351,9 @@ def default_phrases() -> Phrases:
             Phrase(id="BC3", text="そうだね", gesture="nod_small"),
             Phrase(id="BC4", text="できたね！", gesture="happy_lean_short"),
             Phrase(id="BC5", trigger="手伝ってと言われたとき", text="私は手伝えないから、自分で頑張ってみよう", gesture="shake_gentle_antenna_up"),
+            Phrase(id="BC6", trigger="名前を呼ぶ", text="{child}！", gesture="lean_in_nod"),
+            Phrase(id="BC7", text="すごいね", gesture="antenna_clap"),
+            Phrase(id="BC8", text="その調子！", gesture="nod_big_x2"),
         ],
     )
 
