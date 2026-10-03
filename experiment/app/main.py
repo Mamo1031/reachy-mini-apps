@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import logging
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +44,7 @@ from .monitor import ConnectionMonitor
 from .performer import PerformError, Performer
 from .player import TrajectoryPlayer
 from .power import PowerMonitor, fmt_uptime
-from .recordings import RecordingLibrary
+from .recordings import RecordingLibrary, name_folder
 from .pose import DEG, NEUTRAL, antenna_distance, head_distance
 from .robot import RobotClient, RobotError
 from .session import SessionError, SessionManager
@@ -488,6 +489,26 @@ def snapshot() -> dict[str, Any]:
 @app.get("/api/state")
 async def get_state():
     return snapshot()
+
+
+@app.get("/api/recordings/child")
+async def recordings_child(name: str = ""):
+    """開始画面用: この名前(呼び方込み)の録音が「今」あるか。
+
+    snapshot の一覧はページを開いた時点のものなので、あとから置いたファイルが映らない。
+    ここでは再生時と同じ探索(find)をその場で行う。名前入りの台詞をフォルダ(文 / 名前だけ)ごとにまとめて返す。
+    """
+    child = unicodedata.normalize("NFC", name.strip())
+    lib = state.audio.recordings
+    out: dict[str, Any] = {"source": state.settings.tts.source, "available": lib is not None, "name": child, "kinds": []}
+    if lib is None or not child:
+        return out
+    ids_by_folder: dict[str, list[str]] = {}
+    for leaf in state.phrases.leaves().values():
+        if "{child}" in leaf.text:
+            ids_by_folder.setdefault(name_folder(leaf.text), []).append(leaf.id)
+    out["kinds"] = [{"folder": folder, "ids": ids, "ready": lib.find(f"{folder}/{child}") is not None} for folder, ids in ids_by_folder.items()]
+    return out
 
 
 @app.get("/api/events")
