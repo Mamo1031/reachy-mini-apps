@@ -24,6 +24,7 @@ from .events import EventBus
 from .gestures import GestureError, GestureLibrary, Trajectory
 from .monitor import ConnectionMonitor
 from .player import TrajectoryPlayer
+from .recordings import name_key
 from .robot import RobotClient, RobotError, RobotHttpError
 from .session import SessionManager
 from .tracker import FaceTracker
@@ -112,10 +113,10 @@ class Performer:
         return expand(text, robot=s.names.robot, child=child, experimenter=s.names.experimenter)
 
     def speech_item(self, leaf: Any) -> SpeechItem:
-        """台詞 1 つ分の音声の指定。名前入りの台詞だけは録音を「名前」で探す。"""
+        """台詞 1 つ分の音声の指定。名前入りの台詞だけは録音を「名前」で探す(文か名前だけかで置き場所が違う)。"""
         text = self.expand_text(leaf.text)
         if "{child}" in leaf.text and self.session.current is not None:
-            return SpeechItem(key=f"names/{self.session.current.child_display}", text=text)
+            return SpeechItem(key=name_key(leaf.text, self.session.current.child_display), text=text)
         return SpeechItem(key=leaf.id, text=text)
 
     def texts_for_prewarm(self, include_child: bool) -> list[str]:
