@@ -28,10 +28,12 @@ def test_default_phrases_leaves_and_sequences():
     assert [k for k in leaves if leaves[k].category == "logical"] == [f"C{i}" for i in range(1, 11)]
     assert [leaves[k].text for k in ("BC1", "BC2", "BC3", "BC4")] == ["うん！", "ちがうよ", "そうだね", "できたね！"]
     assert leaves["BC5"].text.startswith("私は手伝えないから")  # 「手伝って」と言われたとき用
+    assert leaves["BC6"].text == "{child}！" and leaves["BC6"].label == "名前を呼ぶ"  # 名前だけの録音を相づちに使う
+    assert [leaves[k].text for k in ("BC7", "BC8")] == ["すごいね", "その調子！"]  # 2026-10-03 追加録音
     assert ph.intro_sequence("robot_first") == ["A1", "A2", "A3", "A4", "A5-1", "A5-2"]
     assert ph.intro_sequence("experimenter_first") == ph.intro_sequence("robot_first")  # 順序で分岐しない
-    # 名前は A2 だけで使う
-    assert [k for k, v in leaves.items() if "{child}" in v.text] == ["A2"]
+    # 名前は A2(文)と BC6(名前だけ)で使う
+    assert [k for k, v in leaves.items() if "{child}" in v.text] == ["A2", "BC6"]
 
 
 def test_every_phrase_gesture_exists():
