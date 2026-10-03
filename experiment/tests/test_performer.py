@@ -265,13 +265,16 @@ async def test_recorded_voice_plays_the_recording_and_stays_silent_when_missing(
 async def test_prewarm_items_dedup_and_child_key(h, tmp_path):
     from tests.test_audio import _library
 
-    h.audio.recordings = _library(tmp_path, stems=("B1",), names=("はなちゃん",))
+    h.audio.recordings = _library(tmp_path, stems=("B1",), names=("はなちゃん",), names_only=("はなちゃん",))
     h.settings.tts.source = "recorded"
     items = h.performer.items_for_prewarm(include_child=True)
     keys = {i.key for i in items}
-    assert "B1" in keys and "names/はなちゃん" in keys  # セッションの名前で探す
+    assert "B1" in keys and "names/はなちゃん" in keys  # セッションの名前で探す(A2 = 名前を含む文)
+    assert "names_only/はなちゃん" in keys  # BC6「はなちゃん！」= 名前だけの録音
+    by_key = {i.key: i.text for i in items}
+    assert by_key["names/はなちゃん"].startswith("はなちゃんっていうんだね") and by_key["names_only/はなちゃん"] == "はなちゃん！"
     texts = [i.text for i in items]
-    assert len(texts) == len(set(texts)) or True  # 同じ文言でも録音が別なら別項目
     assert all("{child}" not in t for t in texts)
     without = h.performer.items_for_prewarm(include_child=False)
-    assert not any(i.key.startswith("names/") for i in without)
+    assert not any(i.key.startswith(("names/", "names_only/")) for i in without)
+    assert not any("はなちゃん" in i.text for i in without)
